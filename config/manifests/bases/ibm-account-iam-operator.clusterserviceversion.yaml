@@ -1,0 +1,50 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: ibm-account-iam-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: AccountIAM is the Schema for the accountiams API
+      displayName: Account IAM
+      kind: AccountIAM
+      name: accountiams.operator.ibm.com
+      version: v1alpha1
+  description: You can use IBM Account IAM Operator to install the Account IAM services
+    to manage user access to IBM services
+  displayName: IBM Account-IAM Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - IBM
+  - Cloud
+  - Account-IAM
+  links:
+  - name: Ibm Account Iam Operator
+    url: https://ibm-account-iam-operator.domain
+  maintainers:
+  - email: test@email.com
+    name: test
+  maturity: alpha
+  provider:
+    name: IBM
+  version: 0.0.0

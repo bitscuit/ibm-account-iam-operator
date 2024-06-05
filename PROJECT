@@ -10,4 +10,14 @@ plugins:
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: ibm-account-iam-operator
 repo: github.com/IBM/ibm-account-iam-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: ibm.com
+  group: operator
+  kind: AccountIAM
+  path: github.com/IBM/ibm-account-iam-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"
