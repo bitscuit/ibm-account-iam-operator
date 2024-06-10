@@ -47,9 +47,23 @@ type AccountIAMReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	logger.Info("#Reconciling AccountIAM using fid image")
+
+	// pre-req check: edb, websphere
+
+	// fan-out operator pattern
+	// check .spec.version
+
+	// run version.reconcile
+	// reconcile resources in account-iam-automation/scripts/fyre/out/manifests.yaml
+	// reconcile resources in account-iam-automation/scripts/fyre/bedrock/iam-cert-rotation.yaml
+
+	// what resources have no dependencies?
+	// what dependencies needed for other resources
+	// set OwnerReference to this CR
+	// can have multiple runtimes?
 
 	return ctrl.Result{}, nil
 }
