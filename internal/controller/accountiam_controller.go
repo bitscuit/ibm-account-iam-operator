@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -25,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
+	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
 
 // AccountIAMReconciler reconciles a AccountIAM object
@@ -36,6 +40,7 @@ type AccountIAMReconciler struct {
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
+//+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorgroups,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -52,12 +57,17 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	logger.Info("#Reconciling AccountIAM using fid image")
 
 	// pre-req check: edb, websphere
-
-	// fan-out operator pattern
-	// check .spec.version
+	if err := r.verifyPrereq(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// run version.reconcile
 	// reconcile resources in account-iam-automation/scripts/fyre/out/manifests.yaml
+	// load configuration from secret-bootstrap
+	// load configuration from configmap-bootstrap
+	// create secrets and configmaps with data from bootstrap configuration
+	// create WLA CR
+
 	// reconcile resources in account-iam-automation/scripts/fyre/bedrock/iam-cert-rotation.yaml
 
 	// what resources have no dependencies?
@@ -66,6 +76,30 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// can have multiple runtimes?
 
 	return ctrl.Result{}, nil
+}
+
+func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
+	og := &olmapi.OperatorGroupList{}
+	err := r.Client.List(ctx, og, &client.ListOptions{
+		Namespace: os.Getenv("WATCH_NAMESPACE"),
+	})
+	if err != nil {
+		return err
+	}
+	if len(og.Items) != 1 {
+		return errors.New("there should be exactly one OperatorGroup in this namespace")
+	}
+	providedApis := og.Items[0].Annotations["olm.providedAPIs"]
+
+	if !strings.Contains(providedApis, "postgresql") {
+		return errors.New("missing EDB prereq")
+	}
+
+	if !strings.Contains(providedApis, "WebSphereLibertyApplication") {
+		return errors.New("missing Websphere Liberty prereq")
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
