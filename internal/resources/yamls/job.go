@@ -57,3 +57,16 @@ spec:
                   path: account-iam-token
             defaultMode: 420
 `
+
+const DB_MIGRATION_MCSPID_SA = `
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-iam-migration
+  namespace: mcsp
+  labels:
+    by-squad: mcsp-user-management
+    for-product: all
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+`

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"text/template"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -66,6 +67,8 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -157,9 +160,9 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		return err
 	}
 
-	// if err := r.reconcileJob(ctx, instance); err != nil {
-	// 	return err
-	// }
+	if err := r.reconcileJob(ctx, instance); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -303,6 +306,35 @@ func (r *AccountIAMReconciler) reconcileSecret(ctx context.Context, instance *op
 		return err
 	}
 	if err := r.Create(ctx, secret); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileJob(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+
+	sa := &corev1.ServiceAccount{}
+	if err := yaml.Unmarshal([]byte(res.DB_MIGRATION_MCSPID_SA), sa); err != nil {
+		return err
+	}
+	sa.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, sa, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, sa); err != nil {
+		return err
+	}
+
+	job := &batchv1.Job{}
+	if err := yaml.Unmarshal([]byte(res.DB_MIGRATION_MCSPID), job); err != nil {
+		return err
+	}
+	job.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, job, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, job); err != nil {
 		return err
 	}
 
