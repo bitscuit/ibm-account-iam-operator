@@ -36,6 +36,7 @@ import (
 
 	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
 	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
+	wlapi "github.com/WASdev/websphere-liberty-operator/api/v1"
 	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
@@ -69,6 +70,7 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=liberty.websphere.ibm.com,resources=webspherelibertyapplications,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -161,6 +163,10 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	}
 
 	if err := r.reconcileJob(ctx, instance); err != nil {
+		return err
+	}
+
+	if err := r.reconcileApp(ctx, instance); err != nil {
 		return err
 	}
 
@@ -335,6 +341,23 @@ func (r *AccountIAMReconciler) reconcileJob(ctx context.Context, instance *opera
 		return err
 	}
 	if err := r.Create(ctx, job); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileApp(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+
+	app := &wlapi.WebSphereLibertyApplication{}
+	if err := yaml.Unmarshal([]byte(res.ACCOUNT_IAM_APP), app); err != nil {
+		return err
+	}
+	app.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, app, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, app); err != nil {
 		return err
 	}
 
