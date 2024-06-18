@@ -100,27 +100,13 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	// pre-req check: edb, websphere
 	if err := r.verifyPrereq(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// run version.reconcile
-	// reconcile resources in account-iam-automation/scripts/fyre/out/manifests.yaml
-	// load configuration from secret-bootstrap
-	// load configuration from configmap-bootstrap
-	// create secrets and configmaps with data from bootstrap configuration
-	// create WLA CR
 	if err := r.reconcileOperandResources(ctx, instance); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	// reconcile resources in account-iam-automation/scripts/fyre/bedrock/iam-cert-rotation.yaml
-
-	// what resources have no dependencies?
-	// what dependencies needed for other resources
-	// set OwnerReference to this CR
-	// can have multiple runtimes?
 
 	return ctrl.Result{}, nil
 }
