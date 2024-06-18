@@ -17,10 +17,12 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"strings"
+	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
@@ -43,12 +45,27 @@ type AccountIAMReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+type BootstrapSecret struct {
+	Realm               string
+	ClientID            string
+	ClientSecret        string
+	DiscoveryEndpoint   string
+	UserValidationAPIV2 string
+	PGPassword          string
+	DefaultAUDValue     string
+	DefaultIDPValue     string
+	DefaultRealmValue   string
+}
+
+var BootstrapData BootstrapSecret
+
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorgroups,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -135,6 +152,15 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	if err := r.reconcileConfigmap(ctx, instance); err != nil {
 		return err
 	}
+
+	if err := r.reconcileSecret(ctx, instance); err != nil {
+		return err
+	}
+
+	// if err := r.reconcileJob(ctx, instance); err != nil {
+	// 	return err
+	// }
+
 	return nil
 }
 
@@ -188,6 +214,95 @@ func (r *AccountIAMReconciler) reconcileConfigmap(ctx context.Context, instance 
 		return err
 	}
 	if err := r.Create(ctx, jwtConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileSecret(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+
+	var tmplWriter bytes.Buffer
+	tmpl, err := template.New("template bootstrap secrets").Parse(res.ClientAuth)
+	if err != nil {
+		return err
+	}
+	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+		return err
+	}
+
+	secret := &corev1.Secret{}
+	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
+		return err
+	}
+	secret.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
+		return err
+	}
+
+	tmplWriter.Reset()
+	tmpl, err = tmpl.Parse(res.OKD_Auth)
+	if err != nil {
+		return err
+	}
+	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+		return err
+	}
+
+	secret = &corev1.Secret{}
+	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
+		return err
+	}
+	secret.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
+		return err
+	}
+
+	tmplWriter.Reset()
+	tmpl, err = tmpl.Parse(res.DatabaseSecret)
+	if err != nil {
+		return err
+	}
+	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+		return err
+	}
+
+	secret = &corev1.Secret{}
+	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
+		return err
+	}
+	secret.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
+		return err
+	}
+
+	tmplWriter.Reset()
+	tmpl, err = tmpl.Parse(res.MpConfig)
+	if err != nil {
+		return err
+	}
+	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+		return err
+	}
+
+	secret = &corev1.Secret{}
+	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
+		return err
+	}
+	secret.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
 		return err
 	}
 
