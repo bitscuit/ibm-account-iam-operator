@@ -22,12 +22,18 @@ import (
 	"os"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	netv1 "k8s.io/api/networking/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
+	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
+	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
 
@@ -41,6 +47,8 @@ type AccountIAMReconciler struct {
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorgroups,verbs=get;list;watch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -56,6 +64,20 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	logger.Info("#Reconciling AccountIAM using fid image")
 
+	instance := &operatorv1alpha1.AccountIAM{}
+	err := r.Client.Get(context.TODO(), req.NamespacedName, instance)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			logger.Info("CR instance not found, don't requeue")
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
+	}
+
 	// pre-req check: edb, websphere
 	if err := r.verifyPrereq(ctx); err != nil {
 		return ctrl.Result{}, err
@@ -67,6 +89,9 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// load configuration from configmap-bootstrap
 	// create secrets and configmaps with data from bootstrap configuration
 	// create WLA CR
+	if err := r.reconcileOperandResources(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// reconcile resources in account-iam-automation/scripts/fyre/bedrock/iam-cert-rotation.yaml
 
@@ -97,6 +122,73 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
 
 	if !strings.Contains(providedApis, "WebSphereLibertyApplication") {
 		return errors.New("missing Websphere Liberty prereq")
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
+		return err
+	}
+
+	if err := r.reconcileConfigmap(ctx, instance); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileNetworkPolicy(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	ingress := &netv1.NetworkPolicy{}
+	if err := yaml.Unmarshal([]byte(res.INGRESS), ingress); err != nil {
+		return err
+	}
+	ingress.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, ingress, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, ingress); err != nil {
+		return err
+	}
+
+	egress := &netv1.NetworkPolicy{}
+	if err := yaml.Unmarshal([]byte(res.EGRESS), egress); err != nil {
+		return err
+	}
+	egress.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, egress, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, egress); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileConfigmap(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	configmap := &corev1.ConfigMap{}
+	if err := yaml.Unmarshal([]byte(res.CONFIG_ENV), configmap); err != nil {
+		return err
+	}
+	configmap.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, configmap, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, configmap); err != nil {
+		return err
+	}
+
+	jwtConfig := &corev1.ConfigMap{}
+	if err := yaml.Unmarshal([]byte(res.CONFIG_JWT), jwtConfig); err != nil {
+		return err
+	}
+	jwtConfig.Namespace = instance.Namespace
+	if err := controllerutil.SetControllerReference(instance, jwtConfig, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, jwtConfig); err != nil {
+		return err
 	}
 
 	return nil
