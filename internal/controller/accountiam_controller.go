@@ -24,11 +24,11 @@ import (
 	"strings"
 	"text/template"
 
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	netv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -36,7 +36,6 @@ import (
 
 	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
 	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
-	wlapi "github.com/WASdev/websphere-liberty-operator/api/v1"
 	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
@@ -100,7 +99,7 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if err := r.verifyPrereq(ctx); err != nil {
+	if err := r.verifyPrereq(ctx, instance.Namespace); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -111,7 +110,7 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
+func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) error {
 	og := &olmapi.OperatorGroupList{}
 	err := r.Client.List(ctx, og, &client.ListOptions{
 		Namespace: os.Getenv("WATCH_NAMESPACE"),
@@ -132,218 +131,82 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
 		return errors.New("missing Websphere Liberty prereq")
 	}
 
+	bootSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
+		return err
+	}
+
+	bootstrapConverter, err := yaml.Marshal(bootSecret.Data)
+	if err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-	if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
-		return err
-	}
-
-	if err := r.reconcileConfigmap(ctx, instance); err != nil {
-		return err
-	}
-
-	if err := r.reconcileSecret(ctx, instance); err != nil {
-		return err
-	}
-
-	if err := r.reconcileJob(ctx, instance); err != nil {
-		return err
-	}
-
-	if err := r.reconcileApp(ctx, instance); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *AccountIAMReconciler) reconcileNetworkPolicy(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-	ingress := &netv1.NetworkPolicy{}
-	if err := yaml.Unmarshal([]byte(res.INGRESS), ingress); err != nil {
-		return err
-	}
-	ingress.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, ingress, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, ingress); err != nil {
-		return err
-	}
-
-	egress := &netv1.NetworkPolicy{}
-	if err := yaml.Unmarshal([]byte(res.EGRESS), egress); err != nil {
-		return err
-	}
-	egress.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, egress, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, egress); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *AccountIAMReconciler) reconcileConfigmap(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-	configmap := &corev1.ConfigMap{}
-	if err := yaml.Unmarshal([]byte(res.CONFIG_ENV), configmap); err != nil {
-		return err
-	}
-	configmap.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, configmap, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, configmap); err != nil {
-		return err
-	}
-
-	jwtConfig := &corev1.ConfigMap{}
-	if err := yaml.Unmarshal([]byte(res.CONFIG_JWT), jwtConfig); err != nil {
-		return err
-	}
-	jwtConfig.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, jwtConfig, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, jwtConfig); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *AccountIAMReconciler) reconcileSecret(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-
+	// manifests which need data injected before creation
+	object := &unstructured.Unstructured{}
+	tmpl := template.New("template bootstrap secrets")
 	var tmplWriter bytes.Buffer
-	tmpl, err := template.New("template bootstrap secrets").Parse(res.ClientAuth)
-	if err != nil {
-		return err
-	}
-	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
-		return err
+	for _, v := range res.APP_SECRETS {
+		manifest := v
+		tmplWriter.Reset()
+
+		tmpl, err := tmpl.Parse(manifest)
+		if err != nil {
+			return err
+		}
+		if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+			return err
+		}
+
+		if err := yaml.Unmarshal(tmplWriter.Bytes(), object); err != nil {
+			return err
+		}
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
 	}
 
-	secret := &corev1.Secret{}
-	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
-		return err
-	}
-	secret.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, secret); err != nil {
-		return err
-	}
-
-	tmplWriter.Reset()
-	tmpl, err = tmpl.Parse(res.OKD_Auth)
-	if err != nil {
-		return err
-	}
-	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
-		return err
-	}
-
-	secret = &corev1.Secret{}
-	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
-		return err
-	}
-	secret.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, secret); err != nil {
-		return err
-	}
-
-	tmplWriter.Reset()
-	tmpl, err = tmpl.Parse(res.DatabaseSecret)
-	if err != nil {
-		return err
-	}
-	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
-		return err
-	}
-
-	secret = &corev1.Secret{}
-	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
-		return err
-	}
-	secret.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, secret); err != nil {
-		return err
-	}
-
-	tmplWriter.Reset()
-	tmpl, err = tmpl.Parse(res.MpConfig)
-	if err != nil {
-		return err
-	}
-	if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
-		return err
-	}
-
-	secret = &corev1.Secret{}
-	if err := yaml.Unmarshal(tmplWriter.Bytes(), secret); err != nil {
-		return err
-	}
-	secret.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, secret, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, secret); err != nil {
-		return err
+	// static manifests which
+	for _, v := range res.APP_STATIC_YAMLS {
+		manifest := []byte(v)
+		if err := yaml.Unmarshal(manifest, object); err != nil {
+			return err
+		}
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func (r *AccountIAMReconciler) reconcileJob(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-
-	sa := &corev1.ServiceAccount{}
-	if err := yaml.Unmarshal([]byte(res.DB_MIGRATION_MCSPID_SA), sa); err != nil {
-		return err
+func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj client.Object) error {
+	err := r.Update(ctx, obj)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
 	}
-	sa.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, sa, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, sa); err != nil {
-		return err
+	if err == nil {
+		return nil
 	}
 
-	job := &batchv1.Job{}
-	if err := yaml.Unmarshal([]byte(res.DB_MIGRATION_MCSPID), job); err != nil {
-		return err
-	}
-	job.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, job, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, job); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *AccountIAMReconciler) reconcileApp(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-
-	app := &wlapi.WebSphereLibertyApplication{}
-	if err := yaml.Unmarshal([]byte(res.ACCOUNT_IAM_APP), app); err != nil {
-		return err
-	}
-	app.Namespace = instance.Namespace
-	if err := controllerutil.SetControllerReference(instance, app, r.Scheme); err != nil {
-		return err
-	}
-	if err := r.Create(ctx, app); err != nil {
+	// only reachable if update DID see error IsNotFound
+	if err := r.Create(ctx, obj); err != nil {
 		return err
 	}
 
