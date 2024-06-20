@@ -70,6 +70,9 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=liberty.websphere.ibm.com,resources=webspherelibertyapplications,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings;roles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -176,8 +179,9 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		}
 	}
 
-	// static manifests which
-	for _, v := range res.APP_STATIC_YAMLS {
+	// static manifests which do not change
+	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
+	for _, v := range staticYamls {
 		manifest := []byte(v)
 		if err := yaml.Unmarshal(manifest, object); err != nil {
 			return err
