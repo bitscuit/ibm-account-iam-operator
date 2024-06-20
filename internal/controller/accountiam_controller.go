@@ -26,6 +26,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -147,6 +148,26 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) erro
 		return err
 	}
 
+	return r.cleanJob(ctx, ns)
+}
+
+func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
+	object := &unstructured.Unstructured{}
+	manifest := []byte(res.DB_MIGRATION_MCSPID)
+	if err := yaml.Unmarshal(manifest, object); err != nil {
+		return err
+	}
+	object.SetNamespace(ns)
+	log.Log.Info("", "job object", object)
+	background := metav1.DeletePropagationBackground
+	if err := r.Delete(ctx, object, &client.DeleteOptions{
+		PropagationPolicy: &background,
+	}); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -198,21 +219,36 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	return nil
 }
 
-func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj client.Object) error {
-	err := r.Update(ctx, obj)
+func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstructured.Unstructured) error {
+	// err := r.Update(ctx, obj)
+	// if err != nil {
+	// 	if !k8serrors.IsNotFound(err) {
+	// 		return err
+	// 	}
+	// }
+	// if err == nil {
+	// 	return nil
+	// }
+
+	// only reachable if update DID see error IsNotFound
+	err := r.Create(ctx, obj)
 	if err != nil {
-		if !k8serrors.IsNotFound(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 	}
+
 	if err == nil {
 		return nil
 	}
 
-	// only reachable if update DID see error IsNotFound
-	if err := r.Create(ctx, obj); err != nil {
-		return err
-	}
+	// updatedCluster := &unstructured.Unstructured{}
+	// err = r.Get(ctx, types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()}, updatedCluster)
+	// if err != nil {
+	// 	return err
+	// }
+	// log.Log.Info("", "cluster res", updatedCluster)
+	// updatedCluster.SetUnstructuredContent(obj.UnstructuredContent())
 
 	return nil
 }
