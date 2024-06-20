@@ -17,17 +17,27 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"strings"
+	"text/template"
 
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
+	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
+	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
 
@@ -37,10 +47,33 @@ type AccountIAMReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+type BootstrapSecret struct {
+	Realm               string
+	ClientID            string
+	ClientSecret        string
+	DiscoveryEndpoint   string
+	UserValidationAPIV2 string
+	PGPassword          string
+	DefaultAUDValue     string
+	DefaultIDPValue     string
+	DefaultRealmValue   string
+}
+
+var BootstrapData BootstrapSecret
+
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorgroups,verbs=get;list;watch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=liberty.websphere.ibm.com,resources=webspherelibertyapplications,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings;roles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -56,29 +89,32 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	logger.Info("#Reconciling AccountIAM using fid image")
 
-	// pre-req check: edb, websphere
-	if err := r.verifyPrereq(ctx); err != nil {
+	instance := &operatorv1alpha1.AccountIAM{}
+	err := r.Client.Get(context.TODO(), req.NamespacedName, instance)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			logger.Info("CR instance not found, don't requeue")
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
 	}
 
-	// run version.reconcile
-	// reconcile resources in account-iam-automation/scripts/fyre/out/manifests.yaml
-	// load configuration from secret-bootstrap
-	// load configuration from configmap-bootstrap
-	// create secrets and configmaps with data from bootstrap configuration
-	// create WLA CR
+	if err := r.verifyPrereq(ctx, instance.Namespace); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	// reconcile resources in account-iam-automation/scripts/fyre/bedrock/iam-cert-rotation.yaml
-
-	// what resources have no dependencies?
-	// what dependencies needed for other resources
-	// set OwnerReference to this CR
-	// can have multiple runtimes?
+	if err := r.reconcileOperandResources(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
+func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) error {
 	og := &olmapi.OperatorGroupList{}
 	err := r.Client.List(ctx, og, &client.ListOptions{
 		Namespace: os.Getenv("WATCH_NAMESPACE"),
@@ -98,6 +134,121 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context) error {
 	if !strings.Contains(providedApis, "WebSphereLibertyApplication") {
 		return errors.New("missing Websphere Liberty prereq")
 	}
+
+	bootSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
+		return err
+	}
+
+	bootstrapConverter, err := yaml.Marshal(bootSecret.Data)
+	if err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
+		return err
+	}
+
+	return r.cleanJob(ctx, ns)
+}
+
+func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
+	object := &unstructured.Unstructured{}
+	manifest := []byte(res.DB_MIGRATION_MCSPID)
+	if err := yaml.Unmarshal(manifest, object); err != nil {
+		return err
+	}
+	object.SetNamespace(ns)
+	log.Log.Info("", "job object", object)
+	background := metav1.DeletePropagationBackground
+	if err := r.Delete(ctx, object, &client.DeleteOptions{
+		PropagationPolicy: &background,
+	}); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	// manifests which need data injected before creation
+	object := &unstructured.Unstructured{}
+	tmpl := template.New("template bootstrap secrets")
+	var tmplWriter bytes.Buffer
+	for _, v := range res.APP_SECRETS {
+		manifest := v
+		tmplWriter.Reset()
+
+		tmpl, err := tmpl.Parse(manifest)
+		if err != nil {
+			return err
+		}
+		if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
+			return err
+		}
+
+		if err := yaml.Unmarshal(tmplWriter.Bytes(), object); err != nil {
+			return err
+		}
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
+	}
+
+	// static manifests which do not change
+	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
+	for _, v := range staticYamls {
+		manifest := []byte(v)
+		if err := yaml.Unmarshal(manifest, object); err != nil {
+			return err
+		}
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstructured.Unstructured) error {
+	// err := r.Update(ctx, obj)
+	// if err != nil {
+	// 	if !k8serrors.IsNotFound(err) {
+	// 		return err
+	// 	}
+	// }
+	// if err == nil {
+	// 	return nil
+	// }
+
+	// only reachable if update DID see error IsNotFound
+	err := r.Create(ctx, obj)
+	if err != nil {
+		if !k8serrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+
+	if err == nil {
+		return nil
+	}
+
+	// updatedCluster := &unstructured.Unstructured{}
+	// err = r.Get(ctx, types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()}, updatedCluster)
+	// if err != nil {
+	// 	return err
+	// }
+	// log.Log.Info("", "cluster res", updatedCluster)
+	// updatedCluster.SetUnstructuredContent(obj.UnstructuredContent())
 
 	return nil
 }
