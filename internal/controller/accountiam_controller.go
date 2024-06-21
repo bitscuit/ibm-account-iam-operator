@@ -242,14 +242,16 @@ func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstruct
 		return nil
 	}
 
-	// updatedCluster := &unstructured.Unstructured{}
-	// err = r.Get(ctx, types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()}, updatedCluster)
-	// if err != nil {
-	// 	return err
-	// }
-	// log.Log.Info("", "cluster res", updatedCluster)
-	// updatedCluster.SetUnstructuredContent(obj.UnstructuredContent())
-
+	fromCluster := &unstructured.Unstructured{}
+	fromCluster.SetKind(obj.GetKind())
+	fromCluster.SetAPIVersion(obj.GetAPIVersion())
+	if err := r.Get(ctx, types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()}, fromCluster); err != nil {
+		return err
+	}
+	obj.SetResourceVersion(fromCluster.GetResourceVersion())
+	if err := r.Update(ctx, obj); err != nil {
+		return err
+	}
 	return nil
 }
 
