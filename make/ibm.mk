@@ -1,21 +1,51 @@
-VERSION ?= 1.0.0
-
-BUNDLE_IMG ?= ibm-account-iam-operator-bundle:v$(VERSION)
-
-IMG ?= ibm-account-iam-operator:v$(VERSION)
+DEV_VERSION ?= dev # Could be other string or version number
+DEV_REGISTRY ?= quay.io/bedrockinstallerfid
 
 YQ_VERSION ?= v4.44.1
 
-# change the image to dev when applying deployment manifests
-deploy: IMG = quay.io/bedrockinstallerfid/ibm-account-iam-operator:dev
+ifneq ($(shell echo "$(DEV_VERSION)" | grep -E '^[^0-9]'),)
+	TAG := $(DEV_VERSION)
+else
+	TAG := v$(DEV_VERSION)
+endif
 
-# change the image tag from VERSION to tag when building dev image
-docker-build-dev: IMG = quay.io/bedrockinstallerfid/ibm-account-iam-operator:dev
+DEV_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-bundle:$(TAG)
 
+DEV_BUNDLE_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-bundle:$(TAG)
+
+DEV_CATALOG_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-catalog:$(TAG)
+
+# Change the image to dev when applying deployment manifests
+deploy: configure-dev
+
+# Configure the varaiable for the dev build
+.PHONY: configure-dev
+configure-dev:
+	$(eval VERSION := $(DEV_VERSION))
+	$(eval IMG := $(DEV_IMG))
+	$(eval BUNDLE_IMG := $(DEV_BUNDLE_IMG))
+	$(eval CATALOG_IMG := $(DEV_CATALOG_IMG))
+	
+##@ Development Build
 .PHONY: docker-build-dev
-docker-build-dev: build
-	$(CONTAINER_TOOL) build -t ${IMG} .
-	$(MAKE) docker-push IMG=${IMG}
+docker-build-dev: configure-dev docker-build 
+	@echo "DEV_VERSION: $(DEV_VERSION)"
+	@echo "VERSION: $(VERSION)"
+
+.PHONY: docker-build-push-dev
+docker-build-push-dev: docker-build-dev docker-push
+
+.PHONY: bundle-build-dev
+bundle-build-dev: configure-dev bundle-build
+
+.PHONY: bundle-build-push-dev
+bundle-build-push-dev: bundle-build-dev bundle-push
+
+.PHONY: catalog-build-dev
+catalog-build-dev: configure-dev catalog-build
+
+.PHONY: catalog-build-push-dev
+catalog-build-push-dev: catalog-build-dev catalog-push
 
 clean-before-commit:
 	cd config/manager && $(KUSTOMIZE) edit set image controller=controller:latest
@@ -23,9 +53,10 @@ clean-before-commit:
 	sed -e 's/Always/IfNotPresent/g' ./config/manager/tmp.yaml > ./config/manager/manager.yaml
 	rm ./config/manager/tmp.yaml
 
+# yq is a lightweight and portable command-line YAML processor
 .PHONY: yq
 YQ ?= $(LOCALBIN)/yq
-yq: ## Download operator-sdk locally if necessary.
+yq:
 ifeq (,$(wildcard $(YQ)))
 ifeq (, $(shell which yq 2>/dev/null))
 	@{ \
