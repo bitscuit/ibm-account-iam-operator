@@ -9,11 +9,13 @@ else
 	TAG := v$(DEV_VERSION)
 endif
 
-DEV_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-bundle:$(TAG)
+DEV_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator:$(TAG)
 
 DEV_BUNDLE_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-bundle:$(TAG)
 
 DEV_CATALOG_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-catalog:$(TAG)
+
+bundle: IMG = $(DEV_IMG)
 
 # Change the image to dev when applying deployment manifests
 deploy: configure-dev
