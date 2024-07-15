@@ -19,6 +19,8 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"os"
 	"strings"
@@ -103,7 +105,7 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	if err := r.verifyPrereq(ctx, instance.Namespace); err != nil {
+	if err := r.verifyPrereq(ctx, instance); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -114,7 +116,7 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) error {
+func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 	og := &olmapi.OperatorGroupList{}
 	err := r.Client.List(ctx, og, &client.ListOptions{
 		Namespace: os.Getenv("WATCH_NAMESPACE"),
@@ -135,8 +137,29 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) erro
 		return errors.New("missing Websphere Liberty prereq")
 	}
 
+	dbPass, err := generatePassword()
+	if err != nil {
+		return err
+	}
+	storedPass := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-im-db-password"}, storedPass); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+		storedPass.Name = "account-im-db-password"
+		storedPass.Namespace = instance.Namespace
+		storedPass.Data = make(map[string][]byte, 1)
+		storedPass.Data["password"] = dbPass
+		if err := r.Create(ctx, storedPass); err != nil {
+			return err
+		}
+	}
+	if _, ok := storedPass.Data["password"]; !ok {
+		return errors.New("account-im-db-password secret is missing password")
+	}
+
 	bootSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
 		return err
 	}
 
@@ -148,7 +171,25 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, ns string) erro
 		return err
 	}
 
-	return r.cleanJob(ctx, ns)
+	BootstrapData.PGPassword = string(storedPass.Data["password"])
+
+	if err := r.cleanJob(ctx, instance.Namespace); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func generatePassword() ([]byte, error) {
+	random := make([]byte, 20)
+	_, err := rand.Read(random)
+	if err != nil {
+		return nil, err
+	}
+	encoded := base64.StdEncoding.EncodeToString(random)
+	encoded2 := base64.StdEncoding.EncodeToString([]byte(encoded))
+	result := []byte(encoded2)
+	return result, nil
 }
 
 func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
@@ -168,12 +209,40 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 		}
 	}
 
+	object = &unstructured.Unstructured{}
+	manifest = []byte(res.DB_BOOTSTRAP_JOB)
+	if err := yaml.Unmarshal(manifest, object); err != nil {
+		return err
+	}
+	object.SetNamespace(ns)
+	if err := r.Delete(ctx, object, &client.DeleteOptions{
+		PropagationPolicy: &background,
+	}); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+	}
+
 	return nil
 }
 
 func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
-	// manifests which need data injected before creation
+
+	// TODO: will need to find a better place to initialize the database
 	object := &unstructured.Unstructured{}
+	manifest := []byte(res.DB_BOOTSTRAP_JOB)
+	if err := yaml.Unmarshal(manifest, object); err != nil {
+		return err
+	}
+	object.SetNamespace(instance.Namespace)
+	if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.createOrUpdate(ctx, object); err != nil {
+		return err
+	}
+
+	// manifests which need data injected before creation
 	tmpl := template.New("template bootstrap secrets")
 	var tmplWriter bytes.Buffer
 	for _, v := range res.APP_SECRETS {
