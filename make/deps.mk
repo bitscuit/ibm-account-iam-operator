@@ -37,7 +37,6 @@ install-docker-buildx: require-local-bin-dir require-cli-plugins-dir
 	@ echo "Checking if installation successful: docker buildx"
 	@ $(MAKE) check-docker-buildx
 
-
 ## YQ is a lightweight and portable command-line YAML processor
 .PHONY: yq
 yq:

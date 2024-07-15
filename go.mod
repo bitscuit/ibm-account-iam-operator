@@ -2,8 +2,6 @@ module github.com/IBM/ibm-account-iam-operator
 
 go 1.22.0
 
-toolchain go1.22.3
-
 require (
 	github.com/WASdev/websphere-liberty-operator v0.0.0-20240605161949-4e0318b69988
 	github.com/ghodss/yaml v1.0.0
