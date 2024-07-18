@@ -21,10 +21,10 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2024-06-27T16:46:01Z"
+    createdAt: "2024-07-18T01:36:55Z"
     operators.operatorframework.io/builder: operator-sdk-v1.34.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
-  name: ibm-account-iam-operator.v0.0.1
+  name: ibm-account-iam-operator.v1.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -228,7 +228,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.annotations['olm.targetNamespaces']
-                image: quay.io/bedrockinstallerfid/ibm-account-iam-operator:v1.0.0
+                image: icr.io/cpopen/ibm-account-iam-operator:latest
                 imagePullPolicy: Always
                 livenessProbe:
                   httpGet:
@@ -316,4 +316,4 @@ spec:
   maturity: alpha
   provider:
     name: IBM
-  version: 0.0.1
+  version: 1.0.0
