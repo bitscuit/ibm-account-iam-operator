@@ -88,10 +88,10 @@ catalog-build-push-dev: catalog-build-dev catalog-push
 
 ##@ Production Build
 .PHONY: docker-build-prod
-docker-build-prod: docker-buildx
+docker-build-prod: docker-build
 
 .PHONY: docker-build-push-prod
-docker-build-push-prod: docker-buildx docker-push
+docker-build-push-prod: docker-build-prod docker-push
 	$(CONTAINER_TOOL) tag $(IMG) $(IMAGE_TAG_BASE):v$(VERSION)
 	$(MAKE) docker-push IMG=$(IMAGE_TAG_BASE):v$(VERSION)
 
