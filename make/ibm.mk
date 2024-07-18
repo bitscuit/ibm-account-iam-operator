@@ -6,7 +6,6 @@ LOCAL_BIN_DIR ?= $(ROOT_DIR)/bin
 # Local scripts folder used
 LOCAL_SCRIPTS_DIR ?= $(ROOT_DIR)/scripts
 
-
 # Must be created if doesn't exist, as some targets place dependencies into it
 .PHONY: require-local-bin-dir
 require-local-bin-dir:
@@ -102,6 +101,12 @@ clean-before-commit:
 		-e 's|Always|IfNotPresent|g' \
 		./bundle/manifests/tmp.yaml > ./bundle/manifests/ibm-account-iam-operator.clusterserviceversion.yaml
 	rm ./bundle/manifests/tmp.yaml
+
+get-cluster-credentials: activate-serviceaccount
+	mkdir -p ~/.kube; cp -v /etc/kubeconfig/config ~/.kube; kubectl config use-context default; kubectl get nodes; echo going forward retiring google cloud
+
+config-docker: get-cluster-credentials
+	@scripts/makefile-config/artifactory_config_docker.sh
 
 # Test
 .PHONY: check
