@@ -28,3 +28,6 @@ chmod a+x "$DOCKER_BUILDX"
 
 # Make a symlink to the local file
 ln -sf "$DOCKER_BUILDX" "$DOCKER_CLI_PLUGINS"/docker-buildx
+
+# Install the plugin
+docker buildx install
