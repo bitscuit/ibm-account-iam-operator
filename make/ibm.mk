@@ -87,7 +87,7 @@ catalog-build-push-dev: catalog-build-dev catalog-push
 
 ##@ Production Build
 .PHONY: docker-build-prod
-docker-build-prod: install-docker-buildx docker-buildx
+docker-build-prod: docker-build
 
 .PHONY: docker-build-push-prod
 docker-build-push-prod: docker-build-prod docker-push
