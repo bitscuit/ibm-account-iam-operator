@@ -42,7 +42,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-okd-auth
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -60,7 +59,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-database-secret
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -76,9 +74,10 @@ stringData:
   pg_db_user: user_accountiam
   pg_jdbc_password_jndi: "jdbc/iamdatasource"
   pgPassword: {{ .PGPassword }}
-  GLOBAL_ACCOUNT_AUD: <>
-  GLOBAL_ACCOUNT_IDP: <>
-  GLOBAL_ACCOUNT_REALM: <>
+data:
+  GLOBAL_ACCOUNT_AUD: {{ .GlobalAccountAud }}
+  GLOBAL_ACCOUNT_IDP: {{ .GlobalAccountIDP }}
+  GLOBAL_ACCOUNT_REALM: {{ .GlobalRealmValue }}
 type: Opaque
 `
 
@@ -87,7 +86,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-mpconfig-secrets
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -182,7 +180,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: account-iam-env-configmap-dev
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -200,7 +197,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: account-iam
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -218,7 +214,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: account-iam-db-migration-mcspid
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -258,7 +253,6 @@ spec:
             limits:
               cpu: 500m
               memory: 600Mi
-      restartPolicy: Never
       serviceAccountName: account-iam-migration
       volumes:
         - name: account-iam-token
@@ -276,7 +270,6 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: account-iam-migration
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -289,7 +282,6 @@ apiVersion: liberty.websphere.ibm.com/v1
 kind: WebSphereLibertyApplication
 metadata:
   name: account-iam
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all

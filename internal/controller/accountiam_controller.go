@@ -59,6 +59,9 @@ type BootstrapSecret struct {
 	DefaultAUDValue     string
 	DefaultIDPValue     string
 	DefaultRealmValue   string
+	GlobalRealmValue    string
+	GlobalAccountIDP    string
+	GlobalAccountAud    string
 }
 
 var BootstrapData BootstrapSecret
