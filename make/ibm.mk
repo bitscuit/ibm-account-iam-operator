@@ -102,7 +102,7 @@ clean-before-commit:
 		./bundle/manifests/tmp.yaml > ./bundle/manifests/ibm-account-iam-operator.clusterserviceversion.yaml
 	rm ./bundle/manifests/tmp.yaml
 
-get-cluster-credentials: activate-serviceaccount
+get-cluster-credentials:
 	mkdir -p ~/.kube; cp -v /etc/kubeconfig/config ~/.kube; kubectl config use-context default; kubectl get nodes; echo going forward retiring google cloud
 
 config-docker: get-cluster-credentials
