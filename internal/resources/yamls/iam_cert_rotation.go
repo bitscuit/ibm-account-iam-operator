@@ -75,7 +75,10 @@ spec:
             failureThreshold: 3
           env:
             - name: WATCH_NAMESPACE
-              value: mcsp
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
           securityContext:
             capabilities:
               drop:

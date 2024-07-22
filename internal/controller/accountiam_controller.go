@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -37,8 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
-	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
+	operatorv1alpha1 "github.com/IBM/ibm-user-management-operator/api/v1alpha1"
+	res "github.com/IBM/ibm-user-management-operator/internal/resources/yamls"
 	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )
@@ -54,11 +55,17 @@ type BootstrapSecret struct {
 	ClientID            string
 	ClientSecret        string
 	DiscoveryEndpoint   string
-	UserValidationAPIV2 string
 	PGPassword          string
 	DefaultAUDValue     string
 	DefaultIDPValue     string
 	DefaultRealmValue   string
+	SREMCSPGroupsToken  string
+	GlobalRealmValue    string
+	GlobalAccountIDP    string
+	GlobalAccountAud    string
+	UserValidationAPIV2 string
+	AccountIAMURL       string
+	AccountIAMNamespace string
 }
 
 var BootstrapData BootstrapSecret
@@ -105,6 +112,7 @@ var UIBootstrapData UIBootstrapTemplate
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=liberty.websphere.ibm.com,resources=webspherelibertyapplications,verbs=get;list;watch;create;update;patch;delete
@@ -114,6 +122,7 @@ var UIBootstrapData UIBootstrapTemplate
 //+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -152,6 +161,11 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if err := r.reconcileOperandResources(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// create im integration job
+	if err := r.configIM(ctx, instance); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -304,9 +318,10 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		return err
 	}
 
-	// manifests which need data injected before creation
+	// Manifests which need data injected before creation
 	tmpl := template.New("template bootstrap secrets")
 	var tmplWriter bytes.Buffer
+	// Loop through each secret manifest that requires data injection
 	for _, v := range res.APP_SECRETS {
 		manifest := v
 		tmplWriter.Reset()
@@ -373,6 +388,58 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	}
 
 	return nil
+}
+
+func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+
+	logger := log.FromContext(ctx)
+	logger.Info("Creating IM Config Job")
+	object := &unstructured.Unstructured{}
+	var buffer bytes.Buffer
+	decodedData, err := r.decodeData(BootstrapData)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range res.IMConfigYamls {
+		manifest := v
+		buffer.Reset()
+
+		t := template.Must(template.New("new IM job").Parse(manifest))
+		if err := t.Execute(&buffer, decodedData); err != nil {
+			return err
+		}
+
+		if err := yaml.Unmarshal(buffer.Bytes(), object); err != nil {
+			return err
+		}
+
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		logger.Info("Creating IM Config object", "v", v)
+
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *AccountIAMReconciler) decodeData(data BootstrapSecret) (BootstrapSecret, error) {
+	val := reflect.ValueOf(&data).Elem()
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		if field.Kind() == reflect.String {
+			decoded, err := base64.StdEncoding.DecodeString(field.String())
+			if err != nil {
+				return data, err
+			}
+			field.SetString(string(decoded))
+		}
+	}
+	return data, nil
 }
 
 func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstructured.Unstructured) error {

@@ -15,8 +15,6 @@ spec:
         image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-integration-docker-local/ibmcom/mcsp-utils:latest
         command: ["/bin/bash", "/db-init/create_db.sh"]
         volumeMounts:
-        - name: script-volume
-          mountPath: /scripts
         - name: psql-credentials
           mountPath: /psql-credentials
         - name: db-password
@@ -25,9 +23,6 @@ spec:
           mountPath: /data
       restartPolicy: OnFailure
       volumes:
-      - name: script-volume
-        configMap:
-          name: create-account-iam-db
       - name: psql-credentials
         secret:
           secretName: common-service-db-superuser

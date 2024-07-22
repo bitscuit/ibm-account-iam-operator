@@ -24,10 +24,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/IBM/ibm-account-iam-operator/test/utils"
+	"github.com/IBM/ibm-user-management-operator/test/utils"
 )
 
-const namespace = "ibm-account-iam-operator-system"
+const namespace = "ibm-user-management-operator-system"
 
 var _ = Describe("controller", Ordered, func() {
 	BeforeAll(func() {
@@ -60,7 +60,7 @@ var _ = Describe("controller", Ordered, func() {
 			var err error
 
 			// projectimage stores the name of the image used in the example
-			var projectimage = "example.com/ibm-account-iam-operator:v0.0.1"
+			var projectimage = "example.com/ibm-user-management-operator:v0.0.1"
 
 			By("building the manager(Operator) image")
 			cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))

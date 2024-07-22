@@ -42,7 +42,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-okd-auth
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -60,7 +59,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-database-secret
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -76,9 +74,10 @@ stringData:
   pg_db_user: user_accountiam
   pg_jdbc_password_jndi: "jdbc/iamdatasource"
   pgPassword: {{ .PGPassword }}
-  GLOBAL_ACCOUNT_AUD: <>
-  GLOBAL_ACCOUNT_IDP: <>
-  GLOBAL_ACCOUNT_REALM: <>
+data:
+  GLOBAL_ACCOUNT_AUD: {{ .GlobalAccountAud }}
+  GLOBAL_ACCOUNT_IDP: {{ .GlobalAccountIDP }}
+  GLOBAL_ACCOUNT_REALM: {{ .GlobalRealmValue }}
 type: Opaque
 `
 
@@ -87,7 +86,6 @@ kind: Secret
 apiVersion: v1
 metadata:
   name: account-iam-mpconfig-secrets
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -101,11 +99,7 @@ data:
   DEFAULT_AUD_VALUE: {{ .DefaultAUDValue }}
   DEFAULT_IDP_VALUE: {{ .DefaultIDPValue }}
   DEFAULT_REALM_VALUE: {{ .DefaultRealmValue }}
-  IBM_VERIFY_URL: 
-  CLIENT_ID_FOR_SIUSER: 
-  CLIENT_SECRET_FOR_SIUSER: 
-  CLIENT_ID_FOR_SERVICEID: 
-  CLIENT_SECRET_FOR_SERVICEID: 
+  SRE_MCSP_GROUPS_TOKEN: {{ .SREMCSPGroupsToken }}
 type: Opaque
 `
 
@@ -182,7 +176,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: account-iam-env-configmap-dev
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -200,7 +193,6 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: account-iam
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -218,7 +210,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: account-iam-db-migration-mcspid
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -240,7 +231,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: dbmigrate
-          image: icr.io/automation-saas-platform/access-management/account-iam:20240430132235-main-70f5d498c1867f5da50a2b1bf010eae8e4a4b1c1
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/account-iam-amd64:20240722
           envFrom:
             - secretRef:
                 name: account-iam-database-secret
@@ -258,7 +249,6 @@ spec:
             limits:
               cpu: 500m
               memory: 600Mi
-      restartPolicy: Never
       serviceAccountName: account-iam-migration
       volumes:
         - name: account-iam-token
@@ -276,7 +266,6 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: account-iam-migration
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -289,7 +278,6 @@ apiVersion: liberty.websphere.ibm.com/v1
 kind: WebSphereLibertyApplication
 metadata:
   name: account-iam
-  namespace: mcsp
   labels:
     by-squad: mcsp-user-management
     for-product: all
@@ -316,7 +304,7 @@ spec:
   manageTLS: true
   networkPolicy:
     disable: true
-  applicationImage: icr.io/automation-saas-platform/access-management/account-iam:20240430132235-main-70f5d498c1867f5da50a2b1bf010eae8e4a4b1c1
+  applicationImage: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/account-iam-amd64:20240722
   pullPolicy: Always
   replicas: 
   probes:

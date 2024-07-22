@@ -6,7 +6,6 @@ LOCAL_BIN_DIR ?= $(ROOT_DIR)/bin
 # Local scripts folder used
 LOCAL_SCRIPTS_DIR ?= $(ROOT_DIR)/scripts
 
-
 # Must be created if doesn't exist, as some targets place dependencies into it
 .PHONY: require-local-bin-dir
 require-local-bin-dir:
@@ -36,9 +35,12 @@ else
     $(error "This system's OS $(OS) isn't recognized/supported")
 endif
 
+ICR_REGISTRY ?= icr.io/cpopen
+ICR_IMAGE_TAG_BASE ?= $(ICR_REGISTRY)/ibm-user-management-operator
+
 DEV_VERSION ?= dev # Could be other string or version number
 DEV_REGISTRY ?= quay.io/bedrockinstallerfid
-
+DEV_IMAGE_TAG_BASE ?= $(DEV_REGISTRY)/ibm-user-management-operator
 
 ifneq ($(shell echo "$(DEV_VERSION)" | grep -E '^[^0-9]'),)
 	TAG := $(DEV_VERSION)
@@ -46,11 +48,9 @@ else
 	TAG := v$(DEV_VERSION)
 endif
 
-DEV_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator:$(TAG)
-
-DEV_BUNDLE_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-bundle:$(TAG)
-
-DEV_CATALOG_IMG ?= $(DEV_REGISTRY)/ibm-account-iam-operator-catalog:$(TAG)
+DEV_IMG ?= $(DEV_IMAGE_TAG_BASE):$(TAG)
+DEV_BUNDLE_IMG ?= $(DEV_IMAGE_TAG_BASE)-bundle:$(TAG)
+DEV_CATALOG_IMG ?= $(DEV_IMAGE_TAG_BASE)-catalog:$(TAG)
 
 bundle: IMG = $(DEV_IMG)
 
@@ -64,6 +64,7 @@ configure-dev:
 	$(eval IMG := $(DEV_IMG))
 	$(eval BUNDLE_IMG := $(DEV_BUNDLE_IMG))
 	$(eval CATALOG_IMG := $(DEV_CATALOG_IMG))
+	$(MAKE) bundle
 	
 ##@ Development Build
 .PHONY: docker-build-dev
@@ -84,16 +85,30 @@ catalog-build-dev: configure-dev catalog-build
 .PHONY: catalog-build-push-dev
 catalog-build-push-dev: catalog-build-dev catalog-push
 
-clean-before-commit:
-	cd config/manager && $(KUSTOMIZE) edit set image controller=controller:latest
-	cp ./config/manager/manager.yaml ./config/manager/tmp.yaml
-	sed -e 's/Always/IfNotPresent/g' ./config/manager/tmp.yaml > ./config/manager/manager.yaml
-	rm ./config/manager/tmp.yaml
+##@ Production Build
+.PHONY: docker-build-prod
+docker-build-prod: docker-build
 
+.PHONY: docker-build-push-prod
+docker-build-push-prod: docker-build-prod docker-push
+	$(CONTAINER_TOOL) tag $(IMG) $(IMAGE_TAG_BASE):v$(VERSION)
+	$(MAKE) docker-push IMG=$(IMAGE_TAG_BASE):v$(VERSION)
+
+clean-before-commit:
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(ICR_IMAGE_TAG_BASE):latest
+	cp ./bundle/manifests/ibm-user-management-operator.clusterserviceversion.yaml ./bundle/manifests/tmp.yaml
+	sed -e 's|image: .*|image: $(ICR_IMAGE_TAG_BASE):latest|g' \
+		-e 's|Always|IfNotPresent|g' \
+		./bundle/manifests/tmp.yaml > ./bundle/manifests/ibm-user-management-operator.clusterserviceversion.yaml
+	rm ./bundle/manifests/tmp.yaml
+
+get-cluster-credentials:
+	mkdir -p ~/.kube; cp -v /etc/kubeconfig/config ~/.kube; kubectl config use-context default; kubectl get nodes; echo going forward retiring google cloud
+
+config-docker: get-cluster-credentials
+	@scripts/makefile-config/artifactory_config_docker.sh
 
 # Test
 .PHONY: check
 check: ## @code Run the code check
 	@echo "Running check for the code."
-	@echo "Runing require docker buildx as pre-check"
-	$(MAKE) require-docker-buildx
