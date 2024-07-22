@@ -38,8 +38,8 @@ endif
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# ibm.com/ibm-account-iam-operator-bundle:$VERSION and ibm.com/ibm-account-iam-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= $(IMG_REGISTRY)/ibm-account-iam-operator
+# ibm.com/ibm-user-management-operator-bundle:$VERSION and ibm.com/ibm-user-management-operator-catalog:$VERSION.
+IMAGE_TAG_BASE ?= $(IMG_REGISTRY)/ibm-user-management-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)

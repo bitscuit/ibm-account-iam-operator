@@ -4,7 +4,7 @@ metadata:
   annotations:
     alm-examples: '[]'
     capabilities: Basic Install
-  name: ibm-account-iam-operator.v0.0.0
+  name: ibm-user-management-operator.v0.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -15,9 +15,9 @@ spec:
       kind: AccountIAM
       name: accountiams.operator.ibm.com
       version: v1alpha1
-  description: You can use IBM Account IAM Operator to install the Account IAM services
+  description: You can use IBM User Management Operator to install the Account IAM services
     to manage user access to IBM services
-  displayName: IBM Account-IAM Operator
+  displayName: IBM User Management Operator
   icon:
   - base64data: ""
     mediatype: ""
@@ -38,9 +38,10 @@ spec:
   - IBM
   - Cloud
   - Account-IAM
+  - User-Management
   links:
-  - name: Ibm Account Iam Operator
-    url: https://ibm-account-iam-operator.domain
+  - name: Ibm User Management Operator
+    url: https://ibm-user-management-operator.domain
   maintainers:
   - email: test@email.com
     name: test

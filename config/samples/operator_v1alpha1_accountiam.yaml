@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: accountiam
     app.kubernetes.io/instance: accountiam-sample
-    app.kubernetes.io/part-of: ibm-account-iam-operator
+    app.kubernetes.io/part-of: ibm-user-management-operator
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: ibm-account-iam-operator
+    app.kubernetes.io/created-by: ibm-user-management-operator
   name: accountiam-sample
 spec:
   # TODO(user): Add fields here

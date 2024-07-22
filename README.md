@@ -1,4 +1,4 @@
-# ibm-account-iam-operator
+# ibm-user-management-operator
 OpenShift operator to install and manage IBM MCSP account-iam service
 
 ## Developer guide

@@ -36,11 +36,11 @@ else
 endif
 
 ICR_REGISTRY ?= icr.io/cpopen
-ICR_IMAGE_TAG_BASE ?= $(ICR_REGISTRY)/ibm-account-iam-operator
+ICR_IMAGE_TAG_BASE ?= $(ICR_REGISTRY)/ibm-user-management-operator
 
 DEV_VERSION ?= dev # Could be other string or version number
 DEV_REGISTRY ?= quay.io/bedrockinstallerfid
-DEV_IMAGE_TAG_BASE ?= $(DEV_REGISTRY)/ibm-account-iam-operator
+DEV_IMAGE_TAG_BASE ?= $(DEV_REGISTRY)/ibm-user-management-operator
 
 ifneq ($(shell echo "$(DEV_VERSION)" | grep -E '^[^0-9]'),)
 	TAG := $(DEV_VERSION)
@@ -96,10 +96,10 @@ docker-build-push-prod: docker-build-prod docker-push
 
 clean-before-commit:
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(ICR_IMAGE_TAG_BASE):latest
-	cp ./bundle/manifests/ibm-account-iam-operator.clusterserviceversion.yaml ./bundle/manifests/tmp.yaml
+	cp ./bundle/manifests/ibm-user-management-operator.clusterserviceversion.yaml ./bundle/manifests/tmp.yaml
 	sed -e 's|image: .*|image: $(ICR_IMAGE_TAG_BASE):latest|g' \
 		-e 's|Always|IfNotPresent|g' \
-		./bundle/manifests/tmp.yaml > ./bundle/manifests/ibm-account-iam-operator.clusterserviceversion.yaml
+		./bundle/manifests/tmp.yaml > ./bundle/manifests/ibm-user-management-operator.clusterserviceversion.yaml
 	rm ./bundle/manifests/tmp.yaml
 
 get-cluster-credentials:

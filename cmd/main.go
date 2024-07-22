@@ -34,8 +34,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
-	"github.com/IBM/ibm-account-iam-operator/internal/controller"
+	operatorv1alpha1 "github.com/IBM/ibm-user-management-operator/api/v1alpha1"
+	"github.com/IBM/ibm-user-management-operator/internal/controller"
 	wlapi "github.com/WASdev/websphere-liberty-operator/api/v1"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 	//+kubebuilder:scaffold:imports

@@ -38,8 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	operatorv1alpha1 "github.com/IBM/ibm-account-iam-operator/api/v1alpha1"
-	res "github.com/IBM/ibm-account-iam-operator/internal/resources/yamls"
+	operatorv1alpha1 "github.com/IBM/ibm-user-management-operator/api/v1alpha1"
+	res "github.com/IBM/ibm-user-management-operator/internal/resources/yamls"
 	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
 )

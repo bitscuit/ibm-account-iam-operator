@@ -1,4 +1,4 @@
-module github.com/IBM/ibm-account-iam-operator
+module github.com/IBM/ibm-user-management-operator
 
 go 1.22.0
 

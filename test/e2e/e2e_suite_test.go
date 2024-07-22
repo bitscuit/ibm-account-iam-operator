@@ -27,6 +27,6 @@ import (
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	fmt.Fprintf(GinkgoWriter, "Starting ibm-account-iam-operator suite\n")
+	fmt.Fprintf(GinkgoWriter, "Starting ibm-user-management-operator suite\n")
 	RunSpecs(t, "e2e suite")
 }
