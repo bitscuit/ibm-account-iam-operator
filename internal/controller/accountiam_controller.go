@@ -63,6 +63,41 @@ type BootstrapSecret struct {
 
 var BootstrapData BootstrapSecret
 
+type UIBootstrapTemplate struct {
+	Hostname                    string
+	InstanceManagementHostname  string
+	IamAPI                      string
+	NodeEnv                     string
+	CertDir                     string
+	ConfigEnv                   string
+	RedisHost                   string
+	AccountAPI                  string
+	ProductAPI                  string
+	MeteringAPI                 string
+	InstanceAPI                 string
+	IssuerBaseURL               string
+	SubscriptionAPI             string
+	APIOAUTHTokenURL            string
+	RedisCA                     string
+	ClientID                    string
+	ClientSecret                string
+	DisableRedis                string
+	SessionSecret               string
+	DeploymentCloud             string
+	IAMGlobalAPIKey             string
+	APIOAUTHClientID            string
+	APIOAUTHClientSecret        string
+	IAMAPI                      string
+	MyIBMURL                    string
+	AWSProvisioningURL          string
+	IBMCloudProvisioningURL     string
+	ProductRegistrationUsername string
+	ProductRegistrationPassword string
+	IMIDMgmt                    string
+}
+
+var UIBootstrapData UIBootstrapTemplate
+
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
@@ -76,6 +111,9 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings;roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -89,7 +127,7 @@ var BootstrapData BootstrapSecret
 func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	logger.Info("#Reconciling AccountIAM using fid image")
+	logger.Info("Reconciling AccountIAM")
 
 	instance := &operatorv1alpha1.AccountIAM{}
 	err := r.Client.Get(context.TODO(), req.NamespacedName, instance)
@@ -106,6 +144,10 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if err := r.verifyPrereq(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.initUIBootstrapData(ctx, instance); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -226,6 +268,26 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 	return nil
 }
 
+func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	clusterInfo := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "ibmcloud-cluster-info"}, clusterInfo); err != nil {
+		return err
+	}
+	if _, ok := clusterInfo.Data["cluster_kube_apiserver_host"]; !ok {
+		return errors.New("configmap ibmcloud-cluster-info missing field 'cluster_kube_apiserver_host'")
+	}
+	parsing := strings.Split(clusterInfo.Data["cluster_kube_apiserver_host"], ".")
+	domain := strings.Join(parsing[1:], ".")
+	log.Log.Info("", "domain: ", domain)
+
+	UIBootstrapData = UIBootstrapTemplate{
+		Hostname:                   "account-iam-ui-inst-main-" + instance.Namespace + ".apps." + domain,
+		InstanceManagementHostname: "account-iam-ui-inst-" + instance.Namespace + ".apps." + domain,
+	}
+
+	return nil
+}
+
 func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 
 	// TODO: will need to find a better place to initialize the database
@@ -269,8 +331,33 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		}
 	}
 
+	for _, v := range res.TemplateYamlsUI {
+		manifest := v
+		tmplWriter.Reset()
+
+		tmpl, err := tmpl.Parse(manifest)
+		if err != nil {
+			return err
+		}
+		if err := tmpl.Execute(&tmplWriter, UIBootstrapData); err != nil {
+			return err
+		}
+
+		if err := yaml.Unmarshal(tmplWriter.Bytes(), object); err != nil {
+			return err
+		}
+		object.SetNamespace(instance.Namespace)
+		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.createOrUpdate(ctx, object); err != nil {
+			return err
+		}
+	}
+
 	// static manifests which do not change
 	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
+	staticYamls = append(staticYamls, res.StaticYamlsUI...)
 	for _, v := range staticYamls {
 		manifest := []byte(v)
 		if err := yaml.Unmarshal(manifest, object); err != nil {
