@@ -99,11 +99,7 @@ data:
   DEFAULT_AUD_VALUE: {{ .DefaultAUDValue }}
   DEFAULT_IDP_VALUE: {{ .DefaultIDPValue }}
   DEFAULT_REALM_VALUE: {{ .DefaultRealmValue }}
-  IBM_VERIFY_URL: 
-  CLIENT_ID_FOR_SIUSER: 
-  CLIENT_SECRET_FOR_SIUSER: 
-  CLIENT_ID_FOR_SERVICEID: 
-  CLIENT_SECRET_FOR_SERVICEID: 
+  SRE_MCSP_GROUPS_TOKEN: {{ .SREMCSPGroupsToken }}
 type: Opaque
 `
 
@@ -235,7 +231,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: dbmigrate
-          image: icr.io/automation-saas-platform/access-management/account-iam:20240430132235-main-70f5d498c1867f5da50a2b1bf010eae8e4a4b1c1
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/account-iam-amd64:20240722
           envFrom:
             - secretRef:
                 name: account-iam-database-secret
@@ -308,7 +304,7 @@ spec:
   manageTLS: true
   networkPolicy:
     disable: true
-  applicationImage: icr.io/automation-saas-platform/access-management/account-iam:20240430132235-main-70f5d498c1867f5da50a2b1bf010eae8e4a4b1c1
+  applicationImage: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/account-iam-amd64:20240722
   pullPolicy: Always
   replicas: 
   probes:
