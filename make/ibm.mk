@@ -113,7 +113,7 @@ config-docker: get-cluster-credentials
 check: ## @code Run the code check
 	which go
 	echo $(PATH)
-	ls /usr/local/go
+	ls /usr/local/go/bin
 	ls /usr/local/go/pkg/tool
 	ls /usr/local/go/pkg/tool/linux_amd64
 	go fmt ./...
