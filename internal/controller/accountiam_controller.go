@@ -34,10 +34,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/IBM/ibm-user-management-operator/api/v1alpha1"
 	"github.com/IBM/ibm-user-management-operator/internal/resources"
@@ -99,9 +99,8 @@ var BootstrapData BootstrapSecret
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 
-	logger.Info("#Reconciling AccountIAM using fid image")
+	klog.Infof("Reconciling AccountIAM using fid image")
 
 	instance := &operatorv1alpha1.AccountIAM{}
 	err := r.Client.Get(context.TODO(), req.NamespacedName, instance)
@@ -110,7 +109,7 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			logger.Info("CR instance not found, don't requeue")
+			klog.Infof("CR instance not found, don't requeue")
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -158,47 +157,94 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 		return errors.New("missing Websphere Liberty prereq")
 	}
 
-	dbPass, err := generatePassword()
+	// Generate PG password
+	pgPassword, err := generatePassword()
+
 	if err != nil {
 		return err
 	}
-	storedPass := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-im-db-password"}, storedPass); err != nil {
+
+	// Initialize BootstrapData
+	secretData := initBootstrapData(instance.Namespace, string(pgPassword))
+
+	bootstrapsecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "user-mgmt-bootstrap"}, bootstrapsecret); err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
 		}
-		storedPass.Name = "account-im-db-password"
-		storedPass.Namespace = instance.Namespace
-		storedPass.Data = make(map[string][]byte, 1)
-		storedPass.Data["password"] = dbPass
-		if err := r.Create(ctx, storedPass); err != nil {
+
+		klog.Info("Creating bootstrap secret with PG password")
+		bootstrapsecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-mgmt-bootstrap",
+				Namespace: instance.Namespace,
+			},
+			Data: secretData,
+			Type: corev1.SecretTypeOpaque,
+		}
+
+		if err := r.Create(ctx, bootstrapsecret); err != nil {
 			return err
 		}
-	}
-	if _, ok := storedPass.Data["password"]; !ok {
-		return errors.New("account-im-db-password secret is missing password")
+
+		if _, ok := bootstrapsecret.Data["pgPassword"]; !ok {
+			return errors.New("account-im-db-password secret is missing password")
+		}
 	}
 
-	bootSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
-		return err
-	}
+	// bootSecret := &corev1.Secret{}
+	// if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
+	// 	return err
+	// }
 
-	bootstrapConverter, err := yaml.Marshal(bootSecret.Data)
-	if err != nil {
-		return err
-	}
-	if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
-		return err
-	}
+	// bootstrapConverter, err := yaml.Marshal(bootSecret.Data)
+	// if err != nil {
+	// 	return err
+	// }
+	// if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
+	// 	return err
+	// }
 
-	BootstrapData.PGPassword = string(storedPass.Data["password"])
+	// BootstrapData.PGPassword = string(bootstrapsecret.Data["password"])
 
 	if err := r.cleanJob(ctx, instance.Namespace); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// Initialize BootstrapData with default values
+func initBootstrapData(ns string, pg string) map[string][]byte {
+
+	klog.Infof("Initializing BootstrapData")
+	BootstrapData = BootstrapSecret{
+		Realm:               "PrimaryRealm",
+		ClientID:            "mcsp-id",
+		ClientSecret:        "mcsp-secret",
+		DefaultAUDValue:     "mcsp-id",
+		DefaultRealmValue:   "PrimaryRealm",
+		SREMCSPGroupsToken:  "mcsp-im-integration-admin",
+		GlobalRealmValue:    "PrimaryRealm",
+		GlobalAccountAud:    "mcsp-id",
+		UserValidationAPIV2: "https://openshift.default.svc/apis/user.openshift.io/v1/users/~",
+		AccountIAMNamespace: ns,
+		PGPassword:          pg,
+	}
+
+	klog.Infof("BootstrapData", "BootstrapData", BootstrapData)
+
+	secretData := make(map[string][]byte)
+	reflectValue := reflect.ValueOf(BootstrapData)
+	reflectType := reflect.TypeOf(BootstrapData)
+
+	for i := 0; i < reflectType.NumField(); i++ {
+		fieldName := reflectType.Field(i).Name
+		fieldValue := reflectValue.Field(i).String()
+		secretData[fieldName] = []byte(fieldValue)
+	}
+
+	return secretData
 }
 
 func generatePassword() ([]byte, error) {
@@ -220,7 +266,7 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 		return err
 	}
 	object.SetNamespace(ns)
-	log.Log.Info("", "job object", object)
+	klog.Infof("", "job object", object)
 	background := metav1.DeletePropagationBackground
 	if err := r.Delete(ctx, object, &client.DeleteOptions{
 		PropagationPolicy: &background,
@@ -312,8 +358,7 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 
 func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 
-	logger := log.FromContext(ctx)
-	logger.Info("Creating IM Config Job")
+	klog.Infof("Creating IM Config Job")
 	object := &unstructured.Unstructured{}
 	var buffer bytes.Buffer
 	decodedData, err := r.decodeData(BootstrapData)
@@ -338,7 +383,7 @@ func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv
 		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
 			return err
 		}
-		logger.Info("Creating IM Config object", "v", v)
+		klog.Infof("Creating IM Config object", "v", v)
 
 		if err := r.createOrUpdate(ctx, object); err != nil {
 			return err
