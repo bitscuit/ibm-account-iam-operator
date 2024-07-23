@@ -1,3 +1,19 @@
+# Override default variable values from top level Makefile #
+
+VERSION ?= 0.0.1
+CHANNELS ?= v0.1
+
+# IBM specific # 
+
+ifeq ($(BUILD_LOCALLY),0)
+	IMG_REGISTRY ?= docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-integration-docker-local/ibmcom
+	export CONFIG_DOCKER_TARGET = config-docker
+else
+	IMG_REGISTRY ?= docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom
+endif
+
+IMG ?= $(IMAGE_TAG_BASE):latest
+
 ## General
 
 ROOT_DIR ?= $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
@@ -51,11 +67,6 @@ endif
 DEV_IMG ?= $(DEV_IMAGE_TAG_BASE):$(TAG)
 DEV_BUNDLE_IMG ?= $(DEV_IMAGE_TAG_BASE)-bundle:$(TAG)
 DEV_CATALOG_IMG ?= $(DEV_IMAGE_TAG_BASE)-catalog:$(TAG)
-
-bundle: IMG = $(DEV_IMG)
-
-# Change the image to dev when applying deployment manifests
-deploy: configure-dev
 
 # Configure the varaiable for the dev build
 .PHONY: configure-dev
@@ -112,3 +123,14 @@ config-docker: get-cluster-credentials
 .PHONY: check
 check: ## @code Run the code check
 	@echo "Running check for the code."
+
+# Override default variable values or prerequisites from top level Makefile #
+
+bundle: IMG = icr.io/cpopen/ibm-user-management-operator:latest
+
+docker-build: config-docker
+
+# Change the image to dev when applying deployment manifests
+deploy: configure-dev
+
+docker-buildx: require-docker-buildx
