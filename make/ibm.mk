@@ -111,4 +111,6 @@ config-docker: get-cluster-credentials
 # Test
 .PHONY: check
 check: ## @code Run the code check
+	which go
+	go fmt ./...
 	@echo "Running check for the code."
