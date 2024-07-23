@@ -15,8 +15,8 @@ spec:
       kind: AccountIAM
       name: accountiams.operator.ibm.com
       version: v1alpha1
-  description: You can use IBM User Management Operator to install the Account IAM services
-    to manage user access to IBM services
+  description: You can use IBM User Management Operator to install the Account IAM
+    services to manage user access to IBM services
   displayName: IBM User Management Operator
   icon:
   - base64data: ""
