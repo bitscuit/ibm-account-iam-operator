@@ -24,7 +24,6 @@ import (
 	"errors"
 	"os"
 	"reflect"
-	"strings"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -137,18 +136,6 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 	})
 	if err != nil {
 		return err
-	}
-	if len(og.Items) != 1 {
-		return errors.New("there should be exactly one OperatorGroup in this namespace")
-	}
-	providedApis := og.Items[0].Annotations["olm.providedAPIs"]
-
-	if !strings.Contains(providedApis, "postgresql") {
-		return errors.New("missing EDB prereq")
-	}
-
-	if !strings.Contains(providedApis, "WebSphereLibertyApplication") {
-		return errors.New("missing Websphere Liberty prereq")
 	}
 
 	dbPass, err := generatePassword()
