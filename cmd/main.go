@@ -129,6 +129,7 @@ func main() {
 	if err = (&controller.AccountIAMReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Config: mgr.GetConfig(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AccountIAM")
 		os.Exit(1)
