@@ -21,16 +21,21 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"text/template"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -355,6 +360,17 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		return err
 	}
 
+	// Delete the platform-auth-service and platform-identity-provider pod to restart it
+	if err := r.restartAndCheckPod(ctx, instance.Namespace, "platform-auth-service"); err != nil {
+		return err
+	}
+	klog.Infof(" platform-auth-service pod is ready")
+
+	if err := r.restartAndCheckPod(ctx, instance.Namespace, "platform-identity-provider"); err != nil {
+		return err
+	}
+	klog.Infof(" platform-identity-provider pod is ready")
+
 	klog.Infof("MCSP operand resources created successfully")
 	return nil
 }
@@ -450,6 +466,75 @@ func (r *AccountIAMReconciler) ResourceExists(dc discovery.DiscoveryInterface, a
 		}
 	}
 	return false, nil
+}
+
+// restart and check pod
+func (r *AccountIAMReconciler) restartAndCheckPod(ctx context.Context, ns, label string) error {
+	// restart platform-auth-service pod and wait for it to be ready
+
+	pod, err := r.getPodName(ctx, ns, label)
+	if err != nil {
+		return err
+	}
+
+	podName := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod,
+			Namespace: ns,
+		},
+	}
+	if err := r.Delete(ctx, podName); err != nil {
+		klog.Errorf("Failed to delete pod %s in namespace %s", label, ns)
+		return err
+	}
+
+	time.Sleep(10 * time.Second)
+
+	if err := r.waitForPodReady(ctx, ns, label); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *AccountIAMReconciler) getPodName(ctx context.Context, namespace, label string) (string, error) {
+	podList := &corev1.PodList{}
+	labelSelector := labels.SelectorFromSet(labels.Set{"app": label})
+
+	if err := r.Client.List(ctx, podList, &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: labelSelector,
+	}); err != nil {
+		return "", err
+	}
+
+	if len(podList.Items) == 0 {
+		return "", fmt.Errorf("No pod found with label %s in namespace %s", labelSelector, namespace)
+	}
+	return podList.Items[0].Name, nil
+}
+
+func (r *AccountIAMReconciler) waitForPodReady(ctx context.Context, ns, label string) error {
+
+	return wait.PollImmediate(10*time.Second, 2*time.Minute, func() (bool, error) {
+		pod, err := r.getPodName(ctx, ns, label)
+		if err != nil {
+			return false, err
+		}
+		podName := &corev1.Pod{}
+		if err := r.Get(ctx, client.ObjectKey{Name: pod, Namespace: ns}, podName); err != nil {
+			return false, err
+		}
+
+		for _, cond := range podName.Status.Conditions {
+			klog.Infof("Pod %s condition: %v", pod, cond.Type)
+			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
 }
 
 func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstructured.Unstructured) error {
