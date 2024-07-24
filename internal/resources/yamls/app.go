@@ -93,8 +93,6 @@ metadata:
     component-name: iam-services
   annotations:
     argocd.argoproj.io/sync-wave: "0"
-stringData:
-  SRE_MCSP_GROUPS_TOKEN: 
 data:
   DEFAULT_AUD_VALUE: {{ .DefaultAUDValue }}
   DEFAULT_IDP_VALUE: {{ .DefaultIDPValue }}
@@ -185,7 +183,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 data:
   NOTIFICATION_SERVICE_ENABLED: ""
-  LOCAL_TOKEN_ISSUER: https://mcspid/account-iam/api/2.0
+  LOCAL_TOKEN_ISSUER: https://127.0.0.1:9443/oidc/endpoint/OP
 `
 
 const CONFIG_JWT = `

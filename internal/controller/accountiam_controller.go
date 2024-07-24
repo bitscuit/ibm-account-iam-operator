@@ -164,48 +164,26 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 		return err
 	}
 
-	// Initialize BootstrapData
-	secretData := initBootstrapData(instance.Namespace, string(pgPassword))
+	// Get cp-console route
+	host, err := r.getHost(ctx, "ibm-iam-bindinfo-ibmcloud-cluster-info", instance.Namespace)
+	if err != nil {
+		return err
+	}
+	klog.Infof("cp-console route host: %s", host)
 
-	bootstrapsecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "user-mgmt-bootstrap"}, bootstrapsecret); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return err
-		}
-
-		klog.Info("Creating bootstrap secret with PG password")
-		bootstrapsecret = &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "user-mgmt-bootstrap",
-				Namespace: instance.Namespace,
-			},
-			Data: secretData,
-			Type: corev1.SecretTypeOpaque,
-		}
-
-		if err := r.Create(ctx, bootstrapsecret); err != nil {
-			return err
-		}
-
-		if _, ok := bootstrapsecret.Data["pgPassword"]; !ok {
-			return errors.New("account-im-db-password secret is missing password")
-		}
+	// Create bootstrap secret
+	bootstrapsecret, err := r.initBootstrapData(ctx, instance.Namespace, string(pgPassword), host)
+	if err != nil {
+		return err
 	}
 
-	// bootSecret := &corev1.Secret{}
-	// if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "account-iam-bootstrap"}, bootSecret); err != nil {
-	// 	return err
-	// }
-
-	// bootstrapConverter, err := yaml.Marshal(bootSecret.Data)
-	// if err != nil {
-	// 	return err
-	// }
-	// if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
-	// 	return err
-	// }
-
-	// BootstrapData.PGPassword = string(bootstrapsecret.Data["password"])
+	bootstrapConverter, err := yaml.Marshal(bootstrapsecret.Data)
+	if err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal(bootstrapConverter, &BootstrapData); err != nil {
+		return err
+	}
 
 	if err := r.cleanJob(ctx, instance.Namespace); err != nil {
 		return err
@@ -215,36 +193,56 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 }
 
 // Initialize BootstrapData with default values
-func initBootstrapData(ns string, pg string) map[string][]byte {
+func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string, pg string, host string) (*corev1.Secret, error) {
 
-	klog.Infof("Initializing BootstrapData")
-	BootstrapData = BootstrapSecret{
-		Realm:               "PrimaryRealm",
-		ClientID:            "mcsp-id",
-		ClientSecret:        "mcsp-secret",
-		DefaultAUDValue:     "mcsp-id",
-		DefaultRealmValue:   "PrimaryRealm",
-		SREMCSPGroupsToken:  "mcsp-im-integration-admin",
-		GlobalRealmValue:    "PrimaryRealm",
-		GlobalAccountAud:    "mcsp-id",
-		UserValidationAPIV2: "https://openshift.default.svc/apis/user.openshift.io/v1/users/~",
-		AccountIAMNamespace: ns,
-		PGPassword:          pg,
+	klog.Info("Creating bootstrap secret with PG password")
+	bootstrapsecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "user-mgmt-bootstrap",
+			Namespace: ns,
+		},
+		Data: map[string][]byte{
+			"Realm":               []byte("PrimaryRealm"),
+			"ClientID":            []byte("mcsp-id"),
+			"ClientSecret":        []byte("mcsp-secret"),
+			"DiscoveryEndpoint":   []byte(host + "/idprovider/v1/auth/.well-known/openid-configuration"),
+			"UserValidationAPIV2": []byte("https://openshift.default.svc/apis/user.openshift.io/v1/users/~"),
+			"DefaultAUDValue":     []byte("mcsp-id"),
+			"DefaultIDPValue":     []byte(host + "/idprovider/v1/auth"),
+			"DefaultRealmValue":   []byte("PrimaryRealm"),
+			"SREMCSPGroupsToken":  []byte("mcsp-im-integration-admin"),
+			"GlobalRealmValue":    []byte("PrimaryRealm"),
+			"GlobalAccountIDP":    []byte(host + "/idprovider/v1/auth"),
+			"GlobalAccountAud":    []byte("mcsp-id"),
+			"AccountIAMNamespace": []byte(ns),
+			"PGPassword":          []byte(pg),
+		},
+		Type: corev1.SecretTypeOpaque,
 	}
 
-	klog.Infof("BootstrapData", "BootstrapData", BootstrapData)
-
-	secretData := make(map[string][]byte)
-	reflectValue := reflect.ValueOf(BootstrapData)
-	reflectType := reflect.TypeOf(BootstrapData)
-
-	for i := 0; i < reflectType.NumField(); i++ {
-		fieldName := reflectType.Field(i).Name
-		fieldValue := reflectValue.Field(i).String()
-		secretData[fieldName] = []byte(fieldValue)
+	if err := r.Create(ctx, bootstrapsecret); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return nil, err
+		}
 	}
 
-	return secretData
+	if _, ok := bootstrapsecret.Data["PGPassword"]; !ok {
+		return nil, errors.New("PGPassword not found in bootstrap secret")
+	}
+
+	return bootstrapsecret, nil
+}
+
+// Get the host of the route
+func (r *AccountIAMReconciler) getHost(ctx context.Context, name string, ns string) (string, error) {
+	config := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, config); err != nil {
+		if err != nil {
+			klog.Errorf("Failed to get route %s in namespace %s", name, ns)
+			return "", err
+		}
+	}
+	return config.Data["cluster_endpoint"], nil
 }
 
 func generatePassword() ([]byte, error) {

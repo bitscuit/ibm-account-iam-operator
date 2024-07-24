@@ -34,10 +34,10 @@ spec:
           defaultMode: 420  
       - name: db-password
         secret:
-          secretName: account-im-db-password
+          secretName: user-mgmt-bootstrap
           items:
-          - key: password
-            path: password
+          - key: PGPassword
+            path: PGPassword
           defaultMode: 420  
       - name: data-volume
         emptyDir: {}      
