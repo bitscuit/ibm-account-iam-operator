@@ -7,11 +7,14 @@ var APP_SECRETS = []string{
 	MpConfig,
 }
 
+var APP_CONFIGS = []string{
+	CONFIG_JWT,
+}
+
 var APP_STATIC_YAMLS = []string{
 	INGRESS,
 	EGRESS,
 	CONFIG_ENV,
-	CONFIG_JWT,
 	DB_MIGRATION_MCSPID_SA,
 	DB_MIGRATION_MCSPID,
 	ACCOUNT_IAM_APP,
@@ -73,8 +76,8 @@ stringData:
   pg_db_schema: accountiam
   pg_db_user: user_accountiam
   pg_jdbc_password_jndi: "jdbc/iamdatasource"
-  pgPassword: {{ .PGPassword }}
 data:
+  pgPassword: {{ .PGPassword }}
   GLOBAL_ACCOUNT_AUD: {{ .GlobalAccountAud }}
   GLOBAL_ACCOUNT_IDP: {{ .GlobalAccountIDP }}
   GLOBAL_ACCOUNT_REALM: {{ .GlobalRealmValue }}
@@ -199,8 +202,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 data:
-
-  jwt.suffix.issuer: https://mcspid/account-iam/api/2.0
+  jwt.suffix.issuer: {{ .DefaultIDPValue }}
 `
 
 const DB_MIGRATION_MCSPID = `

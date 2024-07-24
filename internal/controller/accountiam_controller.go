@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"os"
 	"reflect"
 	"text/template"
@@ -125,9 +124,9 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// create im integration job
-	if err := r.configIM(ctx, instance); err != nil {
-		return ctrl.Result{}, err
-	}
+	// if err := r.configIM(ctx, instance); err != nil {
+	// 	return ctrl.Result{}, err
+	// }
 
 	return ctrl.Result{}, nil
 }
@@ -177,6 +176,7 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 		return err
 	}
 
+	// Read the values from bootstrap secret and store in BootstrapData struct
 	bootstrapConverter, err := yaml.Marshal(bootstrapsecret.Data)
 	if err != nil {
 		return err
@@ -195,41 +195,45 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 // Initialize BootstrapData with default values
 func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string, pg string, host string) (*corev1.Secret, error) {
 
-	klog.Info("Creating bootstrap secret with PG password")
-	bootstrapsecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-mgmt-bootstrap",
-			Namespace: ns,
-		},
-		Data: map[string][]byte{
-			"Realm":               []byte("PrimaryRealm"),
-			"ClientID":            []byte("mcsp-id"),
-			"ClientSecret":        []byte("mcsp-secret"),
-			"DiscoveryEndpoint":   []byte(host + "/idprovider/v1/auth/.well-known/openid-configuration"),
-			"UserValidationAPIV2": []byte("https://openshift.default.svc/apis/user.openshift.io/v1/users/~"),
-			"DefaultAUDValue":     []byte("mcsp-id"),
-			"DefaultIDPValue":     []byte(host + "/idprovider/v1/auth"),
-			"DefaultRealmValue":   []byte("PrimaryRealm"),
-			"SREMCSPGroupsToken":  []byte("mcsp-im-integration-admin"),
-			"GlobalRealmValue":    []byte("PrimaryRealm"),
-			"GlobalAccountIDP":    []byte(host + "/idprovider/v1/auth"),
-			"GlobalAccountAud":    []byte("mcsp-id"),
-			"AccountIAMNamespace": []byte(ns),
-			"PGPassword":          []byte(pg),
-		},
-		Type: corev1.SecretTypeOpaque,
-	}
+	bootstrapsecret := &corev1.Secret{}
+	if err := r.Get(ctx, client.ObjectKey{Name: "user-mgmt-bootstrap", Namespace: ns}, bootstrapsecret); err != nil {
+		if k8serrors.IsNotFound(err) {
 
-	if err := r.Create(ctx, bootstrapsecret); err != nil {
-		if !k8serrors.IsNotFound(err) {
+			klog.Info("Creating bootstrap secret with PG password")
+			bootstrapsecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-mgmt-bootstrap",
+					Namespace: ns,
+				},
+				Data: map[string][]byte{
+					"Realm":               []byte("PrimaryRealm"),
+					"ClientID":            []byte("mcsp-id"),
+					"ClientSecret":        []byte("mcsp-secret"),
+					"DiscoveryEndpoint":   []byte(host + "/idprovider/v1/auth/.well-known/openid-configuration"),
+					"UserValidationAPIV2": []byte("https://openshift.default.svc/apis/user.openshift.io/v1/users/~"),
+					"DefaultAUDValue":     []byte("mcsp-id"),
+					"DefaultIDPValue":     []byte(host + "/idprovider/v1/auth"),
+					"DefaultRealmValue":   []byte("PrimaryRealm"),
+					"SREMCSPGroupsToken":  []byte("mcsp-im-integration-admin"),
+					"GlobalRealmValue":    []byte("PrimaryRealm"),
+					"GlobalAccountIDP":    []byte(host + "/idprovider/v1/auth"),
+					"GlobalAccountAud":    []byte("mcsp-id"),
+					"AccountIAMNamespace": []byte(ns),
+					"PGPassword":          []byte(pg),
+				},
+				Type: corev1.SecretTypeOpaque,
+			}
+
+			if err := r.Create(ctx, bootstrapsecret); err != nil {
+				if !k8serrors.IsAlreadyExists(err) {
+					return nil, err
+				}
+			}
+			return bootstrapsecret, nil
+		} else {
 			return nil, err
 		}
 	}
-
-	if _, ok := bootstrapsecret.Data["PGPassword"]; !ok {
-		return nil, errors.New("PGPassword not found in bootstrap secret")
-	}
-
 	return bootstrapsecret, nil
 }
 
@@ -237,10 +241,8 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 func (r *AccountIAMReconciler) getHost(ctx context.Context, name string, ns string) (string, error) {
 	config := &corev1.ConfigMap{}
 	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, config); err != nil {
-		if err != nil {
-			klog.Errorf("Failed to get route %s in namespace %s", name, ns)
-			return "", err
-		}
+		klog.Errorf("Failed to get route %s in namespace %s", name, ns)
+		return "", err
 	}
 	return config.Data["cluster_endpoint"], nil
 }
@@ -264,7 +266,7 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 		return err
 	}
 	object.SetNamespace(ns)
-	klog.Infof("", "job object", object)
+	klog.Infof("Cleaning up job %s", object.GetName())
 	background := metav1.DeletePropagationBackground
 	if err := r.Delete(ctx, object, &client.DeleteOptions{
 		PropagationPolicy: &background,
@@ -294,6 +296,7 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 
 	// TODO: will need to find a better place to initialize the database
+	klog.Infof("Creating DB Bootstrap Job")
 	object := &unstructured.Unstructured{}
 	manifest := []byte(res.DB_BOOTSTRAP_JOB)
 	if err := yaml.Unmarshal(manifest, object); err != nil {
@@ -308,34 +311,22 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	}
 
 	// Manifests which need data injected before creation
-	tmpl := template.New("template bootstrap secrets")
-	var tmplWriter bytes.Buffer
-	// Loop through each secret manifest that requires data injection
-	for _, v := range res.APP_SECRETS {
-		manifest := v
-		tmplWriter.Reset()
+	klog.Infof("Creating MCSP secrets")
+	if err := r.InjectData(ctx, instance, res.APP_SECRETS, BootstrapData); err != nil {
+		return err
+	}
 
-		tmpl, err := tmpl.Parse(manifest)
-		if err != nil {
-			return err
-		}
-		if err := tmpl.Execute(&tmplWriter, BootstrapData); err != nil {
-			return err
-		}
-
-		if err := yaml.Unmarshal(tmplWriter.Bytes(), object); err != nil {
-			return err
-		}
-		object.SetNamespace(instance.Namespace)
-		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
-			return err
-		}
-		if err := r.createOrUpdate(ctx, object); err != nil {
-			return err
-		}
+	klog.Infof("Creating MCSP ConfigMaps")
+	decodedData, err := r.decodeData(BootstrapData)
+	if err != nil {
+		return err
+	}
+	if err := r.InjectData(ctx, instance, res.APP_CONFIGS, decodedData); err != nil {
+		return err
 	}
 
 	// static manifests which do not change
+	klog.Infof("Creating MCSP static yamls")
 	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
 	for _, v := range staticYamls {
 		manifest := []byte(v)
@@ -351,25 +342,49 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		}
 	}
 
+	// Temporary update issuer in platform-auth-idp configmap
+	klog.Infof("Updating platform-auth-idp configmap")
+	idpconfig := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Name: "platform-auth-idp", Namespace: instance.Namespace}, idpconfig); err != nil {
+		klog.Errorf("Failed to get configmap platform-auth-idp in namespace %s", instance.Namespace)
+		return err
+	}
+	idpconfig.Data["OIDC_ISSUER_URL"] = decodedData.DefaultIDPValue
+	if err := r.Update(ctx, idpconfig); err != nil {
+		klog.Errorf("Failed to update ConfigMap platform-auth-idp in namespace %s: %v", instance.Namespace, err)
+		return err
+	}
+
+	klog.Infof("MCSP operand resources created successfully")
 	return nil
 }
 
 func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 
 	klog.Infof("Creating IM Config Job")
-	object := &unstructured.Unstructured{}
-	var buffer bytes.Buffer
 	decodedData, err := r.decodeData(BootstrapData)
 	if err != nil {
 		return err
 	}
+	if err := r.InjectData(ctx, instance, res.IMConfigYamls, decodedData); err != nil {
+		return err
+	}
 
-	for _, v := range res.IMConfigYamls {
-		manifest := v
+	return nil
+}
+
+func (r *AccountIAMReconciler) InjectData(ctx context.Context, instance *operatorv1alpha1.AccountIAM, manifests []string, bootstrapData BootstrapSecret) error {
+
+	var buffer bytes.Buffer
+	object := &unstructured.Unstructured{}
+
+	// Loop through each secret manifest that requires data injection
+	for _, manifest := range manifests {
 		buffer.Reset()
 
-		t := template.Must(template.New("new IM job").Parse(manifest))
-		if err := t.Execute(&buffer, decodedData); err != nil {
+		// Parse the manifest template and execute it with the provided bootstrap data
+		t := template.Must(template.New("template resrouces").Parse(manifest))
+		if err := t.Execute(&buffer, bootstrapData); err != nil {
 			return err
 		}
 
@@ -381,12 +396,12 @@ func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv
 		if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
 			return err
 		}
-		klog.Infof("Creating IM Config object", "v", v)
 
 		if err := r.createOrUpdate(ctx, object); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
