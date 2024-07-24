@@ -3,7 +3,7 @@ kind: ClusterServiceVersion
 metadata:
   annotations:
     alm-examples: '[]'
-    capabilities: Seamless Upgrades
+    capabilities: Basic Install
     categories: Security
     certified: "false"
     containerImage: icr.io/cpopen/ibm-user-management-operator:latest
