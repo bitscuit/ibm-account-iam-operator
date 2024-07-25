@@ -132,7 +132,7 @@ kind: ConfigMap
 metadata:
   name: 'account-iam-ui-config-onprem'
 data:
-  IAM_API: '{{ .IamAPI }}'
+  IAM_API: '{{ .IAMAPI }}'
   NODE_ENV: '{{ .NodeEnv }}'
   HOSTNAME: '{{ .Hostname }}'
   CERT_DIR: '{{ .CertDir }}'
@@ -193,6 +193,8 @@ stringData:
     INSTANCE_MANAGEMENT_BASE_URL=https://{{ .InstanceManagementHostname }}
     APOLLO_CLIENT_INSTANCE_API_URL=https://{{ .InstanceManagementHostname }}/api/graphql/instance
     IM_ID_MGMT={{ .IMIDMgmt}}
+    ONPREM_ACCOUNT={{ .OnPremAccount}}
+    CS_IDP_URL={{ .CSIDPURL}}
 `
 
 var IngressAPI = `
@@ -328,7 +330,7 @@ spec:
     spec:
       containers:
         - name: 'account-iam-ui-api-service-onprem-api'
-          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/api_service:cs-inst
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/api_service:4.8.0
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -498,7 +500,7 @@ spec:
     spec:
       containers:
         - name: 'account-iam-ui-instance-service-onprem-instance'
-          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/instance_service:cs
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/instance_management_service:4.8.0
           imagePullPolicy: Always
           ports:
             - containerPort: 3005

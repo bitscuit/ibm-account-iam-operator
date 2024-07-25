@@ -73,7 +73,6 @@ var BootstrapData BootstrapSecret
 type UIBootstrapTemplate struct {
 	Hostname                    string
 	InstanceManagementHostname  string
-	IamAPI                      string
 	NodeEnv                     string
 	CertDir                     string
 	ConfigEnv                   string
@@ -101,6 +100,8 @@ type UIBootstrapTemplate struct {
 	ProductRegistrationUsername string
 	ProductRegistrationPassword string
 	IMIDMgmt                    string
+	CSIDPURL                    string
+	OnPremAccount               string
 }
 
 var UIBootstrapData UIBootstrapTemplate
@@ -290,13 +291,31 @@ func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance
 	if _, ok := clusterInfo.Data["cluster_kube_apiserver_host"]; !ok {
 		return errors.New("configmap ibmcloud-cluster-info missing field 'cluster_kube_apiserver_host'")
 	}
+	cpconsole, ok := clusterInfo.Data["cluster_endpoint"]
+	if !ok {
+		return errors.New("configmap ibmcloud-cluster-info missing field 'cluster_endpoint'")
+	}
 	parsing := strings.Split(clusterInfo.Data["cluster_kube_apiserver_host"], ".")
 	domain := strings.Join(parsing[1:], ".")
 	log.Log.Info("", "domain: ", domain)
 
 	UIBootstrapData = UIBootstrapTemplate{
-		Hostname:                   "account-iam-ui-inst-main-" + instance.Namespace + ".apps." + domain,
-		InstanceManagementHostname: "account-iam-ui-inst-" + instance.Namespace + ".apps." + domain,
+		Hostname:                   concat("account-iam-ui-inst-main-", instance.Namespace, ".apps.", domain),
+		InstanceManagementHostname: concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
+		ClientID:                   BootstrapData.ClientID,
+		ClientSecret:               BootstrapData.ClientSecret,
+		RedisHost:                  "placeholder value until onprem Redis integration done",
+		RedisCA:                    "placeholder value until onprem Redis integration done",
+		SessionSecret:              "placeholder value because we do not know what this is for yet",
+		DeploymentCloud:            "IBM_CLOUD",
+		IAMAPI:                     concat("https://account-iam-", instance.Namespace, ".apps.", domain),
+		NodeEnv:                    "production",
+		CertDir:                    "../../security",
+		ConfigEnv:                  "dev",
+		IssuerBaseURL:              concat(cpconsole, "/idprovider/v1/auth"),
+		IMIDMgmt:                   cpconsole,
+		CSIDPURL:                   concat(cpconsole, "/common-nav/identity-access/realms"),
+		OnPremAccount:              "mcsp-im-intgn-account",
 	}
 
 	return nil
