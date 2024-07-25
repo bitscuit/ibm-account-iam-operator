@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	ocproute "github.com/openshift/api/route/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -52,6 +53,7 @@ func init() {
 	utilruntime.Must(wlapi.AddToScheme(scheme))
 
 	utilruntime.Must(operatorv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(ocproute.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

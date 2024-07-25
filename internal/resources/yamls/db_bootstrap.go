@@ -34,9 +34,9 @@ spec:
           defaultMode: 420  
       - name: db-password
         secret:
-          secretName: account-im-db-password
+          secretName: user-mgmt-bootstrap
           items:
-          - key: password
+          - key: PGPassword
             path: password
           defaultMode: 420  
       - name: data-volume

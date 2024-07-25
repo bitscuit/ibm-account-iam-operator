@@ -7,11 +7,14 @@ var APP_SECRETS = []string{
 	MpConfig,
 }
 
+var APP_CONFIGS = []string{
+	CONFIG_JWT,
+}
+
 var APP_STATIC_YAMLS = []string{
 	INGRESS,
 	EGRESS,
 	CONFIG_ENV,
-	CONFIG_JWT,
 	DB_MIGRATION_MCSPID_SA,
 	DB_MIGRATION_MCSPID,
 	ACCOUNT_IAM_APP,
@@ -73,8 +76,8 @@ stringData:
   pg_db_schema: accountiam
   pg_db_user: user_accountiam
   pg_jdbc_password_jndi: "jdbc/iamdatasource"
-  pgPassword: {{ .PGPassword }}
 data:
+  pgPassword: {{ .PGPassword }}
   GLOBAL_ACCOUNT_AUD: {{ .GlobalAccountAud }}
   GLOBAL_ACCOUNT_IDP: {{ .GlobalAccountIDP }}
   GLOBAL_ACCOUNT_REALM: {{ .GlobalRealmValue }}
@@ -93,8 +96,6 @@ metadata:
     component-name: iam-services
   annotations:
     argocd.argoproj.io/sync-wave: "0"
-stringData:
-  SRE_MCSP_GROUPS_TOKEN: 
 data:
   DEFAULT_AUD_VALUE: {{ .DefaultAUDValue }}
   DEFAULT_IDP_VALUE: {{ .DefaultIDPValue }}
@@ -185,7 +186,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 data:
   NOTIFICATION_SERVICE_ENABLED: ""
-  LOCAL_TOKEN_ISSUER: https://mcspid/account-iam/api/2.0
+  LOCAL_TOKEN_ISSUER: https://127.0.0.1:9443/oidc/endpoint/OP
 `
 
 const CONFIG_JWT = `
@@ -201,8 +202,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 data:
-
-  jwt.suffix.issuer: https://mcspid/account-iam/api/2.0
+  jwt.suffix.issuer: {{ .DefaultIDPValue }}
 `
 
 const DB_MIGRATION_MCSPID = `
@@ -372,10 +372,6 @@ spec:
               name: account-iam-database-secret
           - secret:
               name: account-iam-mpconfig-secrets
-    - name: apiserver-cert
-      secret:
-        secretName: service-network-serving-signer
-        defaultMode: 420
   volumeMounts:
     - name: account-iam-token
       mountPath: /var/run/secrets/tokens
@@ -391,11 +387,6 @@ spec:
     - name: account-iam-variables
       readOnly: true
       mountPath: /config/variables
-    - name: apiserver-cert
-      mountPath: /var/openshift/apiserver
-  env:
-    - name: cert_defaultKeyStore
-      value: /var/openshift/apiserver/tls.crt
   envFrom:
     - configMapRef:
         name: account-iam-env-configmap-dev
