@@ -336,6 +336,17 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	if err != nil {
 		return err
 	}
+
+	//print decodedData
+	// reflectValue := reflect.ValueOf(decodedData)
+	// reflectType := reflect.TypeOf(decodedData)
+
+	// for i := 0; i < reflectType.NumField(); i++ {
+	// 	fieldName := reflectType.Field(i).Name
+	// 	fieldValue := reflectValue.Field(i).String()
+	// 	klog.Infof("Field Name: %s, Field Value: %s", fieldName, fieldValue)
+	// }
+
 	if err := r.InjectData(ctx, instance, res.APP_CONFIGS, decodedData); err != nil {
 		return err
 	}
@@ -402,12 +413,16 @@ func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv
 	}
 	klog.Infof("account-iam route host: %s", host)
 
-	BootstrapData.AccountIAMURL = "https://" + host
+	mcspHost := "https://" + host
+	encodedURL := base64.StdEncoding.EncodeToString([]byte(mcspHost))
+	BootstrapData.AccountIAMURL = encodedURL
+
 	klog.Infof("Creating IM Config Job")
 	decodedData, err := r.decodeData(BootstrapData)
 	if err != nil {
 		return err
 	}
+
 	if err := r.InjectData(ctx, instance, res.IMConfigYamls, decodedData); err != nil {
 		return err
 	}
