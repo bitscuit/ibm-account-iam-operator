@@ -24,7 +24,6 @@ import (
 	"errors"
 	"os"
 	"reflect"
-	"strings"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,12 +32,15 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorv1alpha1 "github.com/IBM/ibm-user-management-operator/api/v1alpha1"
+	"github.com/IBM/ibm-user-management-operator/internal/resources"
 	res "github.com/IBM/ibm-user-management-operator/internal/resources/yamls"
 	"github.com/ghodss/yaml"
 	olmapi "github.com/operator-framework/api/pkg/operators/v1"
@@ -48,6 +50,7 @@ import (
 type AccountIAMReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Config *rest.Config
 }
 
 type BootstrapSecret struct {
@@ -181,16 +184,20 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 	if err != nil {
 		return err
 	}
-	if len(og.Items) != 1 {
-		return errors.New("there should be exactly one OperatorGroup in this namespace")
-	}
-	providedApis := og.Items[0].Annotations["olm.providedAPIs"]
 
-	if !strings.Contains(providedApis, "postgresql") {
+	existEDB, err := r.CheckCRD(resources.EDBAPIGroupVersion, resources.EDBClusterKind)
+	if err != nil {
+		return err
+	}
+	if !existEDB {
 		return errors.New("missing EDB prereq")
 	}
 
-	if !strings.Contains(providedApis, "WebSphereLibertyApplication") {
+	existWebsphere, err := r.CheckCRD(resources.WebSphereAPIGroupVersion, resources.WebSphereKind)
+	if err != nil {
+		return err
+	}
+	if !existWebsphere {
 		return errors.New("missing Websphere Liberty prereq")
 	}
 
@@ -459,6 +466,38 @@ func (r *AccountIAMReconciler) decodeData(data BootstrapSecret) (BootstrapSecret
 		}
 	}
 	return data, nil
+}
+
+// CheckCRD returns true if the given crd is existent
+func (r *AccountIAMReconciler) CheckCRD(apiGroupVersion string, kind string) (bool, error) {
+	dc := discovery.NewDiscoveryClientForConfigOrDie(r.Config)
+	exist, err := r.ResourceExists(dc, apiGroupVersion, kind)
+	if err != nil {
+		return false, err
+	}
+	if !exist {
+		return false, nil
+	}
+	return true, nil
+}
+
+// ResourceExists returns true if the given resource kind exists
+// in the given api groupversion
+func (r *AccountIAMReconciler) ResourceExists(dc discovery.DiscoveryInterface, apiGroupVersion, kind string) (bool, error) {
+	_, apiLists, err := dc.ServerGroupsAndResources()
+	if err != nil {
+		return false, err
+	}
+	for _, apiList := range apiLists {
+		if apiList.GroupVersion == apiGroupVersion {
+			for _, r := range apiList.APIResources {
+				if r.Kind == kind {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }
 
 func (r *AccountIAMReconciler) createOrUpdate(ctx context.Context, obj *unstructured.Unstructured) error {
