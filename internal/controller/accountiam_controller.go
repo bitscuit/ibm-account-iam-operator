@@ -88,6 +88,7 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings;roles,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
 //+kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=operator.ibm.com,resources=operandrequests,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -198,6 +199,10 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 		return err
 	}
 
+	if err := r.ensureOperandRequest(ctx, instance); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -244,6 +249,22 @@ func (r *AccountIAMReconciler) cleanJob(ctx context.Context, ns string) error {
 		}
 	}
 
+	return nil
+}
+
+func (r *AccountIAMReconciler) ensureOperandRequest(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
+	object := &unstructured.Unstructured{}
+	manifest := []byte(res.OperandRequest)
+	if err := yaml.Unmarshal(manifest, object); err != nil {
+		return err
+	}
+	object.SetNamespace(instance.Namespace)
+	if err := controllerutil.SetControllerReference(instance, object, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.createOrUpdate(ctx, object); err != nil {
+		return err
+	}
 	return nil
 }
 
