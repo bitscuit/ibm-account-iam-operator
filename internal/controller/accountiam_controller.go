@@ -72,6 +72,7 @@ type BootstrapSecret struct {
 	GlobalAccountIDP    string
 	GlobalAccountAud    string
 	UserValidationAPIV2 string
+	IAMHOSTURL          string
 	AccountIAMURL       string
 	AccountIAMNamespace string
 }
@@ -228,6 +229,7 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 					"GlobalAccountAud":    []byte("mcsp-id"),
 					"AccountIAMNamespace": []byte(ns),
 					"PGPassword":          []byte(pg),
+					"IAMHOSTURL":          []byte("https://" + host),
 				},
 				Type: corev1.SecretTypeOpaque,
 			}

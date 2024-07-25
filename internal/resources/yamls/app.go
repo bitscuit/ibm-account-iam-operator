@@ -372,10 +372,6 @@ spec:
               name: account-iam-database-secret
           - secret:
               name: account-iam-mpconfig-secrets
-    - name: apiserver-cert
-      secret:
-        secretName: service-network-serving-signer
-        defaultMode: 420
   volumeMounts:
     - name: account-iam-token
       mountPath: /var/run/secrets/tokens
@@ -391,11 +387,6 @@ spec:
     - name: account-iam-variables
       readOnly: true
       mountPath: /config/variables
-    - name: apiserver-cert
-      mountPath: /var/openshift/apiserver
-  env:
-    - name: cert_defaultKeyStore
-      value: /var/openshift/apiserver/tls.crt
   envFrom:
     - configMapRef:
         name: account-iam-env-configmap-dev
