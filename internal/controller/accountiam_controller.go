@@ -312,6 +312,7 @@ func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance
 		InstanceManagementHostname: concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
 		ClientID:                   BootstrapData.ClientID,
 		ClientSecret:               BootstrapData.ClientSecret,
+		IAMGlobalAPIKey:            "placeholder value until logic is added to retrieve from IM job",
 		RedisHost:                  "placeholder value until onprem Redis integration done",
 		RedisCA:                    "placeholder value until onprem Redis integration done",
 		SessionSecret:              "placeholder value because we do not know what this is for yet",
