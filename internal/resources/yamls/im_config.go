@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: mcsp-im-config-job
-        image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/mcsp-im-config-job-amd64:5796e4d
+        image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/mcsp-im-config-job-amd64:f2a2456
         command: ["./mcsp-im-config-job"]
         imagePullPolicy: Always
         securityContext:
@@ -39,7 +39,7 @@ spec:
           - name: NAMESPACE
             value: {{ .AccountIAMNamespace }}
           - name: IM_HOST_URL
-            value: {{ .DefaultIDPValue }}
+            value: {{ .IAMHOSTURL }}
           - name: ACCOUNT_IAM_URL
             value: {{ .AccountIAMURL }}
       serviceAccountName: mcsp-im-config-sa
@@ -68,7 +68,6 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["mcsp-im-integration-api-key"]
     verbs: ["create", "update", "delete"]
 `
 
