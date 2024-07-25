@@ -37,7 +37,7 @@ spec:
           secretName: user-mgmt-bootstrap
           items:
           - key: PGPassword
-            path: PGPassword
+            path: password
           defaultMode: 420  
       - name: data-volume
         emptyDir: {}      

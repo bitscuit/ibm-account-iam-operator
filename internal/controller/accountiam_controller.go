@@ -180,7 +180,7 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 	klog.Infof("cp-console route host: %s", host)
 
 	// Create bootstrap secret
-	bootstrapsecret, err := r.initBootstrapData(ctx, instance.Namespace, string(pgPassword), host)
+	bootstrapsecret, err := r.initBootstrapData(ctx, instance.Namespace, pgPassword, host)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 }
 
 // Initialize BootstrapData with default values
-func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string, pg string, host string) (*corev1.Secret, error) {
+func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string, pg []byte, host string) (*corev1.Secret, error) {
 
 	bootstrapsecret := &corev1.Secret{}
 	if err := r.Get(ctx, client.ObjectKey{Name: "user-mgmt-bootstrap", Namespace: ns}, bootstrapsecret); err != nil {
@@ -228,7 +228,7 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 					"GlobalAccountIDP":    []byte("https://" + host + "/idprovider/v1/auth"),
 					"GlobalAccountAud":    []byte("mcsp-id"),
 					"AccountIAMNamespace": []byte(ns),
-					"PGPassword":          []byte(pg),
+					"PGPassword":          pg,
 					"IAMHOSTURL":          []byte("https://" + host),
 				},
 				Type: corev1.SecretTypeOpaque,

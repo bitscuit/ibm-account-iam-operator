@@ -68,7 +68,6 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["mcsp-im-integration-api-key"]
     verbs: ["create", "update", "delete"]
 `
 
