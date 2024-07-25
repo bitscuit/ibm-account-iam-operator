@@ -28,6 +28,7 @@ import (
 	"text/template"
 	"time"
 
+	ocproute "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,6 +82,7 @@ var BootstrapData BootstrapSecret
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=operator.ibm.com,resources=accountiams/finalizers,verbs=update
 //+kubebuilder:rbac:groups=operators.coreos.com,resources=operatorgroups,verbs=get;list;watch
+//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -129,9 +131,9 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// create im integration job
-	// if err := r.configIM(ctx, instance); err != nil {
-	// 	return ctrl.Result{}, err
-	// }
+	if err := r.configIM(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -169,7 +171,7 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 	}
 
 	// Get cp-console route
-	host, err := r.getHost(ctx, "ibm-iam-bindinfo-ibmcloud-cluster-info", instance.Namespace)
+	host, err := r.getHost(ctx, "cp-console", instance.Namespace)
 	if err != nil {
 		return err
 	}
@@ -214,14 +216,14 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 					"Realm":               []byte("PrimaryRealm"),
 					"ClientID":            []byte("mcsp-id"),
 					"ClientSecret":        []byte("mcsp-secret"),
-					"DiscoveryEndpoint":   []byte(host + "/idprovider/v1/auth/.well-known/openid-configuration"),
+					"DiscoveryEndpoint":   []byte("https://" + host + "/idprovider/v1/auth/.well-known/openid-configuration"),
 					"UserValidationAPIV2": []byte("https://openshift.default.svc/apis/user.openshift.io/v1/users/~"),
 					"DefaultAUDValue":     []byte("mcsp-id"),
-					"DefaultIDPValue":     []byte(host + "/idprovider/v1/auth"),
+					"DefaultIDPValue":     []byte("https://" + host + "/idprovider/v1/auth"),
 					"DefaultRealmValue":   []byte("PrimaryRealm"),
 					"SREMCSPGroupsToken":  []byte("mcsp-im-integration-admin"),
 					"GlobalRealmValue":    []byte("PrimaryRealm"),
-					"GlobalAccountIDP":    []byte(host + "/idprovider/v1/auth"),
+					"GlobalAccountIDP":    []byte("https://" + host + "/idprovider/v1/auth"),
 					"GlobalAccountAud":    []byte("mcsp-id"),
 					"AccountIAMNamespace": []byte(ns),
 					"PGPassword":          []byte(pg),
@@ -244,12 +246,19 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 
 // Get the host of the route
 func (r *AccountIAMReconciler) getHost(ctx context.Context, name string, ns string) (string, error) {
-	config := &corev1.ConfigMap{}
-	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, config); err != nil {
+	// config := &corev1.ConfigMap{}
+	// if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, config); err != nil {
+	// 	klog.Errorf("Failed to get route %s in namespace %s", name, ns)
+	// 	return "", err
+	// }
+	// return config.Data["cluster_endpoint"], nil
+
+	sourceRoute := &ocproute.Route{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, sourceRoute); err != nil {
 		klog.Errorf("Failed to get route %s in namespace %s", name, ns)
 		return "", err
 	}
-	return config.Data["cluster_endpoint"], nil
+	return sourceRoute.Spec.Host, nil
 }
 
 func generatePassword() ([]byte, error) {
@@ -377,6 +386,13 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 
 func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv1alpha1.AccountIAM) error {
 
+	host, err := r.getHost(ctx, "account-iam", instance.Namespace)
+	if err != nil {
+		return err
+	}
+	klog.Infof("account-iam route host: %s", host)
+
+	BootstrapData.AccountIAMURL = "https://" + host
 	klog.Infof("Creating IM Config Job")
 	decodedData, err := r.decodeData(BootstrapData)
 	if err != nil {
@@ -516,7 +532,7 @@ func (r *AccountIAMReconciler) getPodName(ctx context.Context, namespace, label 
 
 func (r *AccountIAMReconciler) waitForPodReady(ctx context.Context, ns, label string) error {
 
-	return wait.PollImmediate(10*time.Second, 2*time.Minute, func() (bool, error) {
+	return wait.PollImmediate(20*time.Second, 2*time.Minute, func() (bool, error) {
 		pod, err := r.getPodName(ctx, ns, label)
 		if err != nil {
 			return false, err
@@ -527,7 +543,7 @@ func (r *AccountIAMReconciler) waitForPodReady(ctx context.Context, ns, label st
 		}
 
 		for _, cond := range podName.Status.Conditions {
-			klog.Infof("Pod %s condition: %v", pod, cond.Type)
+			klog.Infof("Waiting Pod %s to be ready...", pod)
 			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
 				return true, nil
 			}

@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: mcsp-im-config-job
-        image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/mcsp-im-config-job-amd64:5796e4d
+        image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/ibmcom/mcsp-im-config-job-amd64:f2a2456
         command: ["./mcsp-im-config-job"]
         imagePullPolicy: Always
         securityContext:
