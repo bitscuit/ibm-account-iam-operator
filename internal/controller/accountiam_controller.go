@@ -169,6 +169,7 @@ func (r *AccountIAMReconciler) verifyPrereq(ctx context.Context, instance *opera
 	if err != nil {
 		return err
 	}
+	klog.Infof("Generated PG password: %s", pgPassword)
 
 	// Get cp-console route
 	host, err := r.getHost(ctx, "cp-console", instance.Namespace)
@@ -207,7 +208,7 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 		if k8serrors.IsNotFound(err) {
 
 			klog.Info("Creating bootstrap secret with PG password")
-			bootstrapsecret := &corev1.Secret{
+			newsecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-mgmt-bootstrap",
 					Namespace: ns,
@@ -231,12 +232,12 @@ func (r *AccountIAMReconciler) initBootstrapData(ctx context.Context, ns string,
 				Type: corev1.SecretTypeOpaque,
 			}
 
-			if err := r.Create(ctx, bootstrapsecret); err != nil {
+			if err := r.Create(ctx, newsecret); err != nil {
 				if !k8serrors.IsAlreadyExists(err) {
 					return nil, err
 				}
 			}
-			return bootstrapsecret, nil
+			return newsecret, nil
 		} else {
 			return nil, err
 		}
@@ -343,6 +344,7 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	klog.Infof("Creating MCSP static yamls")
 	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
 	for _, v := range staticYamls {
+		object := &unstructured.Unstructured{}
 		manifest := []byte(v)
 		if err := yaml.Unmarshal(manifest, object); err != nil {
 			return err
@@ -363,6 +365,14 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 		klog.Errorf("Failed to get configmap platform-auth-idp in namespace %s", instance.Namespace)
 		return err
 	}
+	currentIssuer := idpconfig.Data["OIDC_ISSUER_URL"]
+	idpValue := decodedData.DefaultIDPValue
+
+	if currentIssuer == idpValue {
+		klog.Infof("ConfigMap platform-auth-idp already has the desired value for OIDC_ISSUER_URL: %s", currentIssuer)
+		return nil // Skip the update as the value is already set
+	}
+
 	idpconfig.Data["OIDC_ISSUER_URL"] = decodedData.DefaultIDPValue
 	if err := r.Update(ctx, idpconfig); err != nil {
 		klog.Errorf("Failed to update ConfigMap platform-auth-idp in namespace %s: %v", instance.Namespace, err)
@@ -408,10 +418,10 @@ func (r *AccountIAMReconciler) configIM(ctx context.Context, instance *operatorv
 func (r *AccountIAMReconciler) InjectData(ctx context.Context, instance *operatorv1alpha1.AccountIAM, manifests []string, bootstrapData BootstrapSecret) error {
 
 	var buffer bytes.Buffer
-	object := &unstructured.Unstructured{}
 
 	// Loop through each secret manifest that requires data injection
 	for _, manifest := range manifests {
+		object := &unstructured.Unstructured{}
 		buffer.Reset()
 
 		// Parse the manifest template and execute it with the provided bootstrap data
