@@ -330,7 +330,7 @@ spec:
     spec:
       containers:
         - name: 'account-iam-ui-api-service-onprem-api'
-          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/api_service:4.8.0
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/api_service:cs
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -500,7 +500,7 @@ spec:
     spec:
       containers:
         - name: 'account-iam-ui-instance-service-onprem-instance'
-          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/instance_management_service:4.8.0
+          image: docker-na-public.artifactory.swg-devops.com/hyc-cloud-private-scratch-docker-local/sgrube/instance_service:cs
           imagePullPolicy: Always
           ports:
             - containerPort: 3005
