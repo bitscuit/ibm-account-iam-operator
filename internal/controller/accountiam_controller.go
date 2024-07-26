@@ -390,7 +390,7 @@ func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance
 	if err != nil {
 		return err
 	}
-	decodedClientSecret, err := base64.StdEncoding.DecodeString(BootstrapData.ClientID)
+	decodedClientSecret, err := base64.StdEncoding.DecodeString(BootstrapData.ClientSecret)
 	if err != nil {
 		return err
 	}
