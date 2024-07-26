@@ -128,7 +128,7 @@ check: ## @code Run the code check
 
 bundle: IMG = icr.io/cpopen/ibm-user-management-operator:latest
 
-docker-build: config-docker
+docker-build: $(CONFIG_DOCKER_TARGET)
 
 # Change the image to dev when applying deployment manifests
 deploy: configure-dev
