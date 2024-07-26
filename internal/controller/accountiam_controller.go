@@ -31,6 +31,7 @@ import (
 
 	ocproute "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -175,6 +176,10 @@ func (r *AccountIAMReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// create im integration job
 	if err := r.configIM(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.waitForJob(ctx, instance.Namespace, "mcsp-im-config-job"); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -372,12 +377,21 @@ func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance
 	domain := strings.Join(parsing[1:], ".")
 	log.Log.Info("", "domain: ", domain)
 
+	apiKeySecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: instance.Namespace, Name: "mcsp-im-integration-api-key"}, apiKeySecret); err != nil {
+		return errors.New("missing secret for API key, 'mcsp-im-integration-api-key'")
+	}
+	apiKey, ok := apiKeySecret.Data["API_KEY"]
+	if !ok {
+		return errors.New("secret for API key, 'mcsp-im-integration-api-key', missing API_KEY field")
+	}
+
 	UIBootstrapData = UIBootstrapTemplate{
-		Hostname:                   concat("account-iam-ui-inst-main-", instance.Namespace, ".apps.", domain),
+		Hostname:                   concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
 		InstanceManagementHostname: concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
 		ClientID:                   BootstrapData.ClientID,
 		ClientSecret:               BootstrapData.ClientSecret,
-		IAMGlobalAPIKey:            "placeholder value until logic is added to retrieve from IM job",
+		IAMGlobalAPIKey:            string(apiKey),
 		RedisHost:                  "placeholder value until onprem Redis integration done",
 		RedisCA:                    "placeholder value until onprem Redis integration done",
 		SessionSecret:              "placeholder value because we do not know what this is for yet",
@@ -441,7 +455,6 @@ func (r *AccountIAMReconciler) reconcileOperandResources(ctx context.Context, in
 	// static manifests which do not change
 	klog.Infof("Creating MCSP static yamls")
 	staticYamls := append(res.APP_STATIC_YAMLS, res.CertRotationYamls...)
-	staticYamls = append(staticYamls, res.StaticYamlsUI...)
 	for _, v := range staticYamls {
 		object := &unstructured.Unstructured{}
 		manifest := []byte(v)
@@ -710,6 +723,25 @@ func (r *AccountIAMReconciler) waitForDeploymentReady(ctx context.Context, ns, l
 
 		if readyReplicas == desiredReplicas {
 			klog.Infof("Deployment %s is ready with %d/%d replicas.", label, readyReplicas, desiredReplicas)
+			return true, nil
+		}
+
+		return false, nil
+	})
+}
+
+func (r *AccountIAMReconciler) waitForJob(ctx context.Context, ns, name string) error {
+
+	return wait.PollImmediate(20*time.Second, 2*time.Minute, func() (bool, error) {
+		job := &batchv1.Job{}
+		if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, job); err != nil {
+			klog.Errorf("failed to get job %s in namespace %s: %v", name, ns, err)
+			return false, err
+		}
+
+		klog.Infof("Waiting for Job %s to be ready...", name)
+
+		if job.Status.Succeeded > 0 {
 			return true, nil
 		}
 
