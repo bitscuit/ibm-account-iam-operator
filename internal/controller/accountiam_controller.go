@@ -386,11 +386,20 @@ func (r *AccountIAMReconciler) initUIBootstrapData(ctx context.Context, instance
 		return errors.New("secret for API key, 'mcsp-im-integration-api-key', missing API_KEY field")
 	}
 
+	decodedClientID, err := base64.StdEncoding.DecodeString(BootstrapData.ClientID)
+	if err != nil {
+		return err
+	}
+	decodedClientSecret, err := base64.StdEncoding.DecodeString(BootstrapData.ClientID)
+	if err != nil {
+		return err
+	}
+
 	UIBootstrapData = UIBootstrapTemplate{
 		Hostname:                   concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
 		InstanceManagementHostname: concat("account-iam-ui-inst-", instance.Namespace, ".apps.", domain),
-		ClientID:                   BootstrapData.ClientID,
-		ClientSecret:               BootstrapData.ClientSecret,
+		ClientID:                   string(decodedClientID),
+		ClientSecret:               string(decodedClientSecret),
 		IAMGlobalAPIKey:            string(apiKey),
 		RedisHost:                  "placeholder value until onprem Redis integration done",
 		RedisCA:                    "placeholder value until onprem Redis integration done",
