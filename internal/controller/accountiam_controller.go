@@ -30,6 +30,7 @@ import (
 	"time"
 
 	ocproute "github.com/openshift/api/route/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -669,7 +670,7 @@ func (r *AccountIAMReconciler) restartAndCheckPod(ctx context.Context, ns, label
 
 	time.Sleep(10 * time.Second)
 
-	if err := r.waitForPodReady(ctx, ns, label); err != nil {
+	if err := r.waitForDeploymentReady(ctx, ns, label); err != nil {
 		return err
 	}
 
@@ -693,23 +694,23 @@ func (r *AccountIAMReconciler) getPodName(ctx context.Context, namespace, label 
 	return podList.Items[0].Name, nil
 }
 
-func (r *AccountIAMReconciler) waitForPodReady(ctx context.Context, ns, label string) error {
+func (r *AccountIAMReconciler) waitForDeploymentReady(ctx context.Context, ns, label string) error {
 
 	return wait.PollImmediate(20*time.Second, 2*time.Minute, func() (bool, error) {
-		pod, err := r.getPodName(ctx, ns, label)
-		if err != nil {
-			return false, err
-		}
-		podName := &corev1.Pod{}
-		if err := r.Get(ctx, client.ObjectKey{Name: pod, Namespace: ns}, podName); err != nil {
+		deployment := &appsv1.Deployment{}
+		if err := r.Get(ctx, client.ObjectKey{Name: label, Namespace: ns}, deployment); err != nil {
+			klog.Errorf("Failed to get deployment %s in namespace %s: %v", label, ns, err)
 			return false, err
 		}
 
-		for _, cond := range podName.Status.Conditions {
-			klog.Infof("Waiting Pod %s to be ready...", pod)
-			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-				return true, nil
-			}
+		klog.Infof("Waiting for Deployment %s to be ready...", label)
+
+		desiredReplicas := *deployment.Spec.Replicas
+		readyReplicas := deployment.Status.ReadyReplicas
+
+		if readyReplicas == desiredReplicas {
+			klog.Infof("Deployment %s is ready with %d/%d replicas.", label, readyReplicas, desiredReplicas)
+			return true, nil
 		}
 
 		return false, nil

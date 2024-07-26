@@ -387,6 +387,9 @@ spec:
     - name: account-iam-variables
       readOnly: true
       mountPath: /config/variables
+  env:
+    - name: cert_defaultKeyStore
+      value: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
   envFrom:
     - configMapRef:
         name: account-iam-env-configmap-dev
